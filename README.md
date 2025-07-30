@@ -1,6 +1,8 @@
-````markdown
 # 软件安装助理 (Software Installer Assistant)
-![Mainform](https://github.com/wanglanaaa/vult/blob/main/Mainform.png)
+
+![Mainform](https://github.com/wanglanaaa/Software-Installer-Assistant/blob/main/Mainform.png)
+
+
 ## 项目简介
 
 “软件安装助理”是一个桌面应用程序，旨在帮助用户高效地管理和安装各类软件。它提供了一个直观的用户界面，允许用户对软件进行分类、管理安装方案，并支持手动和自动（静默）安装。
