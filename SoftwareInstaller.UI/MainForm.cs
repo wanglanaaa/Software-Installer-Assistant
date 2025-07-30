@@ -6,12 +6,13 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Windows.Forms;
-using Microsoft.VisualBasic;
+using SoftwareInstaller.Core;
 using SoftwareInstaller.Models;
+using SoftwareInstaller.Utils;
 
 namespace SoftwareInstaller.UI
 {
-    public partial class Form1 : Form
+    public partial class MainForm : Form
     {
         private TreeView categoryTreeView = null!;
         private ListView softwareListView = null!;
@@ -27,25 +28,25 @@ namespace SoftwareInstaller.UI
         private Button saveSchemeButton = null!;
         private Button deleteSchemeButton = null!;
 
-        private List<Control> bottomControls = new List<Control>(); // Declare as class member
+        private List<Control> bottomControls = new List<Control>(); // 声明为类成员
 
-        private List<SoftwareItem> softwareItems = new List<SoftwareItem>();
+        private SoftwareManager softwareManager;
         private Dictionary<string, List<SoftwareItem>> savedSchemes = new Dictionary<string, List<SoftwareItem>>();
-        private string schemeFilePath = string.Empty;
         private bool isUpdatingByCode = false;
 
-        public Form1()
+        public MainForm()
         {
             InitializeComponent();
+            softwareManager = new SoftwareManager();
             InitializeCustomComponents();
             InitializeSchemeManagement();
-            PopulateDummyData();
+            PopulateSoftwareList();
         }
 
         private void InitializeCustomComponents()
         {
             // =================================================================
-            // UI Modernization (Edge Style)
+            // UI 现代化 (Edge 风格)
             // =================================================================
 
             this.BackColor = Color.White;
@@ -54,14 +55,14 @@ namespace SoftwareInstaller.UI
             this.Size = new System.Drawing.Size(800, 600);
             this.StartPosition = FormStartPosition.CenterScreen;
 
-            // --- Top Controls ---
+            // --- 顶部控件 ---
             categoryTreeView = new TreeView
             {
                 Location = new System.Drawing.Point(20, 20),
                 Size = new System.Drawing.Size(200, 380),
                 BorderStyle = BorderStyle.FixedSingle,
                 CheckBoxes = true,
-                ShowLines = false // Cleaner look
+                ShowLines = false // 更简洁的外观
             };
 
             softwareListView = new ListView
@@ -86,7 +87,7 @@ namespace SoftwareInstaller.UI
 
             var utilityButtons = new List<Button> { addCategoryButton, deleteCategoryButton, addSoftwareButton, deleteSoftwareButton };
 
-            // --- Bottom Action Bar ---
+            // --- 底部操作栏 ---
             Panel bottomPanel = new Panel
             {
                 Size = new System.Drawing.Size(this.ClientSize.Width, 80),
@@ -95,19 +96,19 @@ namespace SoftwareInstaller.UI
             };
             bottomPanel.Paint += (s, e) => e.Graphics.DrawLine(new Pen(Color.Gainsboro, 1), 0, 0, bottomPanel.Width, 0);
 
-            // --- Controls inside Bottom Panel ---
-            // Initialize controls with fixed sizes
+            // --- 底部面板内的控件 ---
+            // 使用固定大小初始化控件
             installPathTextBox = new TextBox { Size = new System.Drawing.Size(150, 23), Text = @"D:\Program Files" };
-            browseButton = new Button { Text = "安装路径", Size = new System.Drawing.Size(80, 25) }; // Fixed size
+            browseButton = new Button { Text = "安装路径", Size = new System.Drawing.Size(80, 25) }; // 固定大小
 
-            manualInstallButton = new Button { Text = "▶️ 手动安装", Size = new System.Drawing.Size(100, 25) }; // Fixed size
-            autoInstallButton = new Button { Text = "⚡ 自动安装", Size = new System.Drawing.Size(100, 25) }; // Fixed size
+            manualInstallButton = new Button { Text = "▶️ 手动安装", Size = new System.Drawing.Size(100, 25) }; // 固定大小
+            autoInstallButton = new Button { Text = "⚡ 自动安装", Size = new System.Drawing.Size(100, 25) }; // 固定大小
 
             schemeComboBox = new ComboBox { Size = new System.Drawing.Size(120, 23), DropDownStyle = ComboBoxStyle.DropDownList };
-            saveSchemeButton = new Button { Text = "保存方案", Size = new System.Drawing.Size(80, 25) }; // Fixed size
-            deleteSchemeButton = new Button { Text = "删除方案", Size = new System.Drawing.Size(80, 25) }; // Fixed size
+            saveSchemeButton = new Button { Text = "保存方案", Size = new System.Drawing.Size(80, 25) }; // 固定大小
+            deleteSchemeButton = new Button { Text = "删除方案", Size = new System.Drawing.Size(80, 25) }; // 固定大小
 
-            // Add to bottomControls list in desired order
+            // 按所需顺序添加到 bottomControls 列表
             bottomControls.Add(installPathTextBox);
             bottomControls.Add(browseButton);
             bottomControls.Add(manualInstallButton);
@@ -116,7 +117,7 @@ namespace SoftwareInstaller.UI
             bottomControls.Add(saveSchemeButton);
             bottomControls.Add(deleteSchemeButton);
 
-            // --- Styling & Layout Logic ---
+            // --- 样式和布局逻辑 ---
             Action<Button, bool> styleButton = (btn, isPrimary) =>
             {
                 btn.FlatStyle = FlatStyle.Flat;
@@ -138,7 +139,7 @@ namespace SoftwareInstaller.UI
             styleButton(manualInstallButton, true);
             styleButton(autoInstallButton, true);
 
-            // Dynamic layout for bottom controls
+            // 底部控件的动态布局
             this.Load += (s, e) => {
                 int totalWidth = bottomControls.Sum(c => c.Width) + (bottomControls.Count - 1) * 10;
                 int currentX = (bottomPanel.ClientSize.Width - totalWidth) / 2;
@@ -153,13 +154,13 @@ namespace SoftwareInstaller.UI
                 }
             };
 
-            // Add all controls to the form
+            // 将所有控件添加到窗体
             this.Controls.Add(categoryTreeView);
             this.Controls.Add(softwareListView);
             this.Controls.Add(bottomPanel);
             utilityButtons.ForEach(btn => this.Controls.Add(btn));
 
-            // --- Event Handlers ---
+            // --- 事件处理程序 ---
             categoryTreeView.AfterCheck += CategoryTreeView_AfterCheck;
             categoryTreeView.NodeMouseClick += CategoryTreeView_NodeMouseClick;
             addCategoryButton.Click += AddCategoryButton_Click;
@@ -176,14 +177,11 @@ namespace SoftwareInstaller.UI
 
         private void InitializeSchemeManagement()
         {
-            string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            string appFolderPath = Path.Combine(appDataPath, "SoftwareInstaller");
-            Directory.CreateDirectory(appFolderPath);
-            schemeFilePath = Path.Combine(appFolderPath, "schemes.json");
-            LoadSchemesFromFile();
+            savedSchemes = SchemeManager.LoadSchemes();
+            UpdateSchemeComboBox();
         }
 
-        private void PopulateDummyData()
+        private void PopulateSoftwareList()
         {
             TreeNode allSoftwareNode = new TreeNode("所有软件");
             allSoftwareNode.Checked = false;
@@ -198,27 +196,10 @@ namespace SoftwareInstaller.UI
                 categoryNodes.Add(name, node);
             };
 
-            AddCategory("办公软件");
-            AddCategory("文字输入");
-            AddCategory("维护工具");
-            AddCategory("网络工具");
+            var categories = softwareManager.SoftwareItems.Select(i => i.Category).Distinct().ToList();
+            categories.ForEach(c => AddCategory(c));
 
-            softwareItems.AddRange(new List<SoftwareItem>
-            {
-                new SoftwareItem { Name = "WPS Office", Version = "11.1.0.9021", Size = "70MB", Description = "WPS Office是一款办公软件", IsSelected = false, Category = "办公软件" },
-                new SoftwareItem { Name = "Office2016免混", Version = "", Size = "", Description = "", IsSelected = false, Category = "办公软件" },
-                new SoftwareItem { Name = "System爱好者维护工具...", Version = "25.4.17.0", Size = "175MB", Description = "System爱好者社区打造的装", IsSelected = false, Category = "维护工具" },
-                new SoftwareItem { Name = "搜狗拼音输入法", Version = "", Size = "", Description = "", IsSelected = false, Category = "文字输入" },
-                new SoftwareItem { Name = "搜狗五笔输入法", Version = "", Size = "", Description = "", IsSelected = false, Category = "文字输入" },
-                new SoftwareItem { Name = "微信正式版", Version = "4.0.3.40", Size = "210MB", Description = "跨平台通讯工具", IsSelected = false, Category = "网络工具" },
-                new SoftwareItem { Name = "QQ9.7", Version = "", Size = "", Description = "", IsSelected = false, Category = "网络工具" },
-                new SoftwareItem { Name = "爱奇艺", Version = "13.1.0.8958", Size = "64MB", Description = "爱奇艺,中国高品质视频娱", IsSelected = false, Category = "网络工具" },
-                new SoftwareItem { Name = "360安全浏览器", Version = "15.2.6440.0", Size = "141MB", Description = "全面守护上网安全,防病毒网", IsSelected = false, Category = "维护工具" },
-                new SoftwareItem { Name = "360压缩", Version = "4.0.0.1520", Size = "15MB", Description = "360压缩是新一代的压缩软", IsSelected = false, Category = "维护工具" },
-                new SoftwareItem { Name = "360安全卫士", Version = "13.0.0.2258", Size = "94MB", Description = "安全卫士13.0全面安全、全", IsSelected = false, Category = "维护工具" }
-            });
-
-            foreach (var item in softwareItems)
+            foreach (var item in softwareManager.SoftwareItems)
             {
                 if (categoryNodes.TryGetValue(item.Category, out TreeNode? categoryNode))
                 {
@@ -308,7 +289,7 @@ namespace SoftwareInstaller.UI
 
         private void CategoryTreeView_NodeMouseClick(object? sender, TreeNodeMouseClickEventArgs e)
         {
-            if (e.Node == null) return; // Fix CS8602: Ensure e.Node is not null
+            if (e.Node == null) return; // 修复 CS8602：确保 e.Node 不为 null
 
             if (e.Button == MouseButtons.Left)
             {
@@ -322,20 +303,26 @@ namespace SoftwareInstaller.UI
 
         private void AddCategoryButton_Click(object? sender, EventArgs e)
         {
-            string? categoryName = Interaction.InputBox("请输入新的分类名称:", "增加分类", "");
-            if (!string.IsNullOrWhiteSpace(categoryName))
+            using (var dialog = new InputDialog("增加分类", "请输入新的分类名称:"))
             {
-                TreeNode? allSoftwareNode = categoryTreeView.Nodes.Cast<TreeNode>().FirstOrDefault(n => n.Text == "所有软件");
-                if (allSoftwareNode != null)
+                if (dialog.ShowDialog() == DialogResult.OK)
                 {
-                    if (allSoftwareNode.Nodes.Cast<TreeNode>().Any(n => n.Text == categoryName))
+                    string? categoryName = dialog.InputText;
+                    if (!string.IsNullOrWhiteSpace(categoryName))
                     {
-                        MessageBox.Show("该分类已存在！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
+                        TreeNode? allSoftwareNode = categoryTreeView.Nodes.Cast<TreeNode>().FirstOrDefault(n => n.Text == "所有软件");
+                        if (allSoftwareNode != null)
+                        {
+                            if (allSoftwareNode.Nodes.Cast<TreeNode>().Any(n => n.Text == categoryName))
+                            {
+                                MessageBox.Show("该分类已存在！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                return;
+                            }
+                            TreeNode newCategoryNode = new TreeNode(categoryName);
+                            allSoftwareNode.Nodes.Add(newCategoryNode);
+                            allSoftwareNode.Expand();
+                        }
                     }
-                    TreeNode newCategoryNode = new TreeNode(categoryName);
-                    allSoftwareNode.Nodes.Add(newCategoryNode);
-                    allSoftwareNode.Expand();
                 }
             }
         }
@@ -347,7 +334,7 @@ namespace SoftwareInstaller.UI
             {
                 if (MessageBox.Show($"确定要删除分类 '{selectedNode.Text}' 吗?\n这将同时删除该分类下的所有软件。", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
                 {
-                    softwareItems.RemoveAll(item => item.Category == selectedNode.Text);
+                    softwareManager.SoftwareItems.RemoveAll(item => item.Category == selectedNode.Text);
                     selectedNode.Remove();
                     UpdateSoftwareListView();
                 }
@@ -367,7 +354,7 @@ namespace SoftwareInstaller.UI
                 return;
             }
 
-            // Prevent adding software directly under the "所有软件" root node
+            // 防止在“所有软件”根节点下直接添加软件
             if (selectedNode.Text == "所有软件")
             {
                 MessageBox.Show("不能直接在'所有软件'根分类下添加软件，请选择一个具体的分类。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -387,15 +374,16 @@ namespace SoftwareInstaller.UI
                     string name = versionInfo.FileDescription ?? Path.GetFileNameWithoutExtension(fileInfo.Name);
                     string version = versionInfo.FileVersion ?? "N/A";
                     string size = $"{(fileInfo.Length / 1024.0 / 1024.0):F2} MB";
-                    string? description = Interaction.InputBox("请编辑软件说明:", "增加软件", versionInfo.Comments ?? "");
-                    string? silentArgs = Interaction.InputBox("请输入该软件的静默安装参数(可选):", "增加软件", "");
+                    string? description = Microsoft.VisualBasic.Interaction.InputBox("请编辑软件说明:", "增加软件", versionInfo.Comments ?? "");
+                    // TODO: 实现一个静默参数数据库（例如 a.json 文件），在添加软件时，根据文件名或描述自动查找并填充推荐的静默参数。
+                    string? silentArgs = string.Empty;
 
                     var newSoftware = new SoftwareItem
                     {
                         Name = name, Version = version, Size = size, Description = description ?? "",
                         Category = selectedNode.Text, FilePath = filePath, SilentInstallArgs = silentArgs, IsSelected = true
                     };
-                    softwareItems.Add(newSoftware);
+                    softwareManager.SoftwareItems.Add(newSoftware);
 
                     TreeNode softwareNode = new TreeNode(newSoftware.Name) { Tag = newSoftware, Checked = true };
                     selectedNode.Nodes.Add(softwareNode);
@@ -412,7 +400,7 @@ namespace SoftwareInstaller.UI
             {
                 if (MessageBox.Show($"确定要删除软件 '{selectedNode.Text}' 吗?", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
                 {
-                    softwareItems.Remove(itemToRemove);
+                    softwareManager.SoftwareItems.Remove(itemToRemove);
                     selectedNode.Remove();
                     UpdateSoftwareListView();
                 }
@@ -436,15 +424,20 @@ namespace SoftwareInstaller.UI
 
         private void ManualInstallButton_Click(object? sender, EventArgs e)
         {
-            ExecuteInstallation(false);
+            List<SoftwareItem> selectedSoftware = GetSelectedSoftwareItems();
+            if (selectedSoftware.Count == 0)
+            {
+                MessageBox.Show("没有选择任何软件进行安装。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            foreach (var item in selectedSoftware)
+            {
+                ProcessRunner.ExecuteInstallation(item, false);
+            }
         }
 
         private void AutoInstallButton_Click(object? sender, EventArgs e)
-        {
-            ExecuteInstallation(true);
-        }
-
-        private void ExecuteInstallation(bool isAuto)
         {
             List<SoftwareItem> selectedSoftware = GetSelectedSoftwareItems();
             if (selectedSoftware.Count == 0)
@@ -455,57 +448,39 @@ namespace SoftwareInstaller.UI
 
             foreach (var item in selectedSoftware)
             {
-                if (string.IsNullOrEmpty(item.FilePath))
-                {
-                    MessageBox.Show($"软件 '{item.Name}' 未找到安装文件路径。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    continue;
-                }
-
-                try
-                {
-                    ProcessStartInfo startInfo = new ProcessStartInfo();
-                    startInfo.FileName = item.FilePath;
-                    if (isAuto)
-                    {
-                        if (string.IsNullOrEmpty(item.SilentInstallArgs))
-                        {
-                            MessageBox.Show($"软件 '{item.Name}' 未提供静默安装参数，无法自动安装。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            continue;
-                        }
-                        startInfo.Arguments = item.SilentInstallArgs;
-                    }
-                    Process.Start(startInfo);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"无法启动安装程序 '{item.Name}'.\n错误: {ex.Message}", "安装失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+                ProcessRunner.ExecuteInstallation(item, true);
             }
         }
 
         private List<SoftwareItem> GetSelectedSoftwareItems()
         {
-            return softwareItems.Where(item => item.IsSelected).ToList();
+            return softwareManager.SoftwareItems.Where(item => item.IsSelected).ToList();
         }
 
         private void SaveSchemeButton_Click(object? sender, EventArgs e)
         {
-            string? schemeName = Interaction.InputBox("请输入方案名称:", "保存方案", "");
-            if (string.IsNullOrWhiteSpace(schemeName)) return;
-
-            if (savedSchemes.ContainsKey(schemeName))
+            using (var dialog = new InputDialog("保存方案", "请输入方案名称:"))
             {
-                if (MessageBox.Show("该方案名称已存在，要覆盖吗?", "确认覆盖", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                if (dialog.ShowDialog() == DialogResult.OK)
                 {
-                    return;
+                    string? schemeName = dialog.InputText;
+                    if (string.IsNullOrWhiteSpace(schemeName)) return;
+
+                    if (savedSchemes.ContainsKey(schemeName))
+                    {
+                        if (MessageBox.Show("该方案名称已存在，要覆盖吗?", "确认覆盖", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                        {
+                            return;
+                        }
+                    }
+
+                    SyncModelFromTree(categoryTreeView.Nodes);
+                    savedSchemes[schemeName] = new List<SoftwareItem>(softwareManager.SoftwareItems.Select(item => item.Clone()));
+                    SchemeManager.SaveSchemes(savedSchemes);
+                    UpdateSchemeComboBox();
+                    schemeComboBox.SelectedItem = schemeName;
                 }
             }
-
-            SyncModelFromTree(categoryTreeView.Nodes);
-            savedSchemes[schemeName] = new List<SoftwareItem>(softwareItems.Select(item => item.Clone()));
-            SaveSchemesToFile();
-            UpdateSchemeComboBox();
-            schemeComboBox.SelectedItem = schemeName;
         }
 
         private void DeleteSchemeButton_Click(object? sender, EventArgs e)
@@ -515,7 +490,7 @@ namespace SoftwareInstaller.UI
                 if (MessageBox.Show($"确定要删除方案 '{selectedScheme}' 吗?", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
                 {
                     savedSchemes.Remove(selectedScheme);
-                    SaveSchemesToFile();
+                    SchemeManager.SaveSchemes(savedSchemes);
                     UpdateSchemeComboBox();
                 }
             }
@@ -530,7 +505,7 @@ namespace SoftwareInstaller.UI
             if (schemeComboBox.SelectedItem is string selectedScheme && savedSchemes.TryGetValue(selectedScheme, out var loadedItems))
             {
                 var selectedInScheme = new HashSet<string>(loadedItems.Where(item => item.IsSelected).Select(item => item.Name));
-                foreach (var item in softwareItems)
+                foreach (var item in softwareManager.SoftwareItems)
                 {
                     item.IsSelected = selectedInScheme.Contains(item.Name);
                 }
@@ -558,36 +533,6 @@ namespace SoftwareInstaller.UI
             }
         }
 
-        private void LoadSchemesFromFile()
-        {
-            try
-            {
-                if (File.Exists(schemeFilePath))
-                {
-                    string jsonString = File.ReadAllText(schemeFilePath);
-                    savedSchemes = JsonSerializer.Deserialize<Dictionary<string, List<SoftwareItem>>>(jsonString) ?? new Dictionary<string, List<SoftwareItem>>();
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"加载方案文件失败.\n错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-            UpdateSchemeComboBox();
-        }
-
-        private void SaveSchemesToFile()
-        {
-            try
-            {
-                string jsonString = JsonSerializer.Serialize(savedSchemes, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(schemeFilePath, jsonString);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"保存方案文件失败.\n错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
         private void UpdateSchemeComboBox()
         {
             var currentSelection = schemeComboBox.SelectedItem;
@@ -608,7 +553,7 @@ namespace SoftwareInstaller.UI
             TreeNode allSoftwareNode = new TreeNode("所有软件");
             categoryTreeView.Nodes.Add(allSoftwareNode);
 
-            var categoryNodes = softwareItems.Select(i => i.Category).Distinct()
+            var categoryNodes = softwareManager.SoftwareItems.Select(i => i.Category).Distinct()
                 .ToDictionary(name => name, name => new TreeNode(name));
 
             foreach (var node in categoryNodes.Values.OrderBy(n => n.Text))
@@ -616,7 +561,7 @@ namespace SoftwareInstaller.UI
                 allSoftwareNode.Nodes.Add(node);
             }
 
-            foreach (var item in softwareItems)
+            foreach (var item in softwareManager.SoftwareItems)
             {
                 if (categoryNodes.TryGetValue(item.Category, out var categoryNode))
                 {

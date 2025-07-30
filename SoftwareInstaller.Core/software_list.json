@@ -1,0 +1,113 @@
+
+[
+  {
+    "Name": "WPS Office",
+    "Version": "11.1.0.9021",
+    "Size": "70MB",
+    "Description": "WPS Office是一款办公软件",
+    "IsSelected": false,
+    "Category": "办公软件",
+    "FilePath": null,
+    "SilentInstallArgs": null
+  },
+  {
+    "Name": "Office2016免混",
+    "Version": "",
+    "Size": "",
+    "Description": "",
+    "IsSelected": false,
+    "Category": "办公软件",
+    "FilePath": null,
+    "SilentInstallArgs": null
+  },
+  {
+    "Name": "System爱好者维护工具...",
+    "Version": "25.4.17.0",
+    "Size": "175MB",
+    "Description": "System爱好者社区打造的装",
+    "IsSelected": false,
+    "Category": "维护工具",
+    "FilePath": null,
+    "SilentInstallArgs": null
+  },
+  {
+    "Name": "搜狗拼音输入法",
+    "Version": "",
+    "Size": "",
+    "Description": "",
+    "IsSelected": false,
+    "Category": "文字输入",
+    "FilePath": null,
+    "SilentInstallArgs": null
+  },
+  {
+    "Name": "搜狗五笔输入法",
+    "Version": "",
+    "Size": "",
+    "Description": "",
+    "IsSelected": false,
+    "Category": "文字输入",
+    "FilePath": null,
+    "SilentInstallArgs": null
+  },
+  {
+    "Name": "微信正式版",
+    "Version": "4.0.3.40",
+    "Size": "210MB",
+    "Description": "跨平台通讯工具",
+    "IsSelected": false,
+    "Category": "网络工具",
+    "FilePath": null,
+    "SilentInstallArgs": null
+  },
+  {
+    "Name": "QQ9.7",
+    "Version": "",
+    "Size": "",
+    "Description": "",
+    "IsSelected": false,
+    "Category": "网络工具",
+    "FilePath": null,
+    "SilentInstallArgs": null
+  },
+  {
+    "Name": "爱奇艺",
+    "Version": "13.1.0.8958",
+    "Size": "64MB",
+    "Description": "爱奇艺,中国高品质视频娱",
+    "IsSelected": false,
+    "Category": "网络工具",
+    "FilePath": null,
+    "SilentInstallArgs": null
+  },
+  {
+    "Name": "360安全浏览器",
+    "Version": "15.2.6440.0",
+    "Size": "141MB",
+    "Description": "全面守护上网安全,防病毒网",
+    "IsSelected": false,
+    "Category": "维护工具",
+    "FilePath": null,
+    "SilentInstallArgs": null
+  },
+  {
+    "Name": "360压缩",
+    "Version": "4.0.0.1520",
+    "Size": "15MB",
+    "Description": "360压缩是新一代的压缩软",
+    "IsSelected": false,
+    "Category": "维护工具",
+    "FilePath": null,
+    "SilentInstallArgs": null
+  },
+  {
+    "Name": "360安全卫士",
+    "Version": "13.0.0.2258",
+    "Size": "94MB",
+    "Description": "安全卫士13.0全面安全、全",
+    "IsSelected": false,
+    "Category": "维护工具",
+    "FilePath": null,
+    "SilentInstallArgs": null
+  }
+]
