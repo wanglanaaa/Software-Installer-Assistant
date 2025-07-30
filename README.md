@@ -35,24 +35,26 @@
 *   `SoftwareInstaller.Models`**: 数据模型层，定义了如 `SoftwareItem` 等核心数据结构。
 *   `SoftwareInstaller.Utils`**: 通用工具层，提供文件读写、进程调用、错误处理等辅助功能。
 
-## 🚀 如何开始
+## 🚀 如何运行
 
-### 先决条件
+### 方式一：为普通用户 (推荐)
 
-*   安装 .NET 9.0 SDK 或更高版本。
+1.  前往本项目的 [**Releases 页面**](https://github.com/wanglanaaa/Software-Installer-Assistant/releases)。
+2.  下载最新版本的 `.zip` 压缩包文件（例如 `Software.Installer.Assistant.v1.1.0.zip`）。
+3.  将压缩包解压到你希望的任意位置。
+4.  进入解压后的文件夹，找到并双击运行 `SoftwareInstaller.UI.exe` 即可启动程序。
 
-### 安装与运行
+### 方式二：为开发者
 
-1.  **克隆仓库**：
+如果你希望自行编译或对代码进行修改，请遵循以下步骤：
+
+1.  **环境准备**: 确保你已安装 [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) 或更高版本。
+2.  **克隆仓库**:
     ```bash
-    git clone [您的GitHub仓库地址]
-    cd soft-main
+    git clone https://github.com/wanglanaaa/Software-Installer-Assistant.git
+    cd Software-Installer-Assistant
     ```
-2.  **构建项目**：
-    ```bash
-    dotnet build
-    ```
-3.  **运行应用程序**：
+3.  **运行程序**:
     ```bash
     dotnet run --project SoftwareInstaller.UI
     ```
