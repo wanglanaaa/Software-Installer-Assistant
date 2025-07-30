@@ -1,6 +1,5 @@
 ````markdown
 # 软件安装助理 (Software Installer Assistant)
-<img width="786" height="591" alt="Mainform" src="https://github.com/user-attachments/assets/61657b72-b0ae-4fc6-9a22-3962598ff7d2" />
 
 ## 项目简介
 
