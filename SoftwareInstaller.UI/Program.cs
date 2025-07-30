@@ -18,18 +18,18 @@ namespace SoftwareInstaller.UI
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new Form1());
+            Application.Run(new MainForm());
         }
 
         private static void Application_ThreadException(object sender, ThreadExceptionEventArgs e)
         {
-            // Log the exception, then display it.
+            // 记录异常，然后显示它。
             MessageBox.Show("Unhandled UI Exception: " + e.Exception.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
         private static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
-            // Log the exception, then display it.
+            // 记录异常，然后显示它。
             MessageBox.Show("Unhandled Application Exception: " + (e.ExceptionObject as Exception)?.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }

@@ -1,6 +1,6 @@
 ﻿namespace SoftwareInstaller.UI;
 
-partial class Form1
+partial class MainForm
 {
     /// <summary>
     ///  Required designer variable.
@@ -23,15 +23,15 @@ partial class Form1
     #region Windows Form Designer generated code
 
     /// <summary>
-    ///  Required method for Designer support - do not modify
-    ///  the contents of this method with the code editor.
+    ///  设计器支持所需的方法 - 不要修改
+    ///  使用代码编辑器修改此方法的内容。
     /// </summary>
     private void InitializeComponent()
     {
         this.components = new System.ComponentModel.Container();
         this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
         this.ClientSize = new System.Drawing.Size(800, 450);
-        this.Text = "Form1";
+        this.Text = "MainForm";
     }
 
     #endregion
