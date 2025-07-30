@@ -2,7 +2,10 @@
 
 
 
+
 ![Mainform](https://github.com/wanglanaaa/Software-Installer-Assistant/blob/main/Mainform.png)
+
+
 
 
 ## 项目简介
@@ -75,5 +78,5 @@
 
 ## 📄 许可证
 
-[待定，您可以选择一个开源许可证，例如 MIT 或 Apache 2.0]
-````
+[待定]
+
