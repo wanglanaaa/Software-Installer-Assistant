@@ -23,14 +23,18 @@ namespace SoftwareInstaller.UI
 
         private static void Application_ThreadException(object sender, ThreadExceptionEventArgs e)
         {
-            // 记录异常，然后显示它。
-            MessageBox.Show("Unhandled UI Exception: " + e.Exception.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            // TODO: 将异常记录到日志文件
+            // File.AppendAllText("error.log", e.Exception.ToString());
+            MessageBox.Show("发生了一个未处理的UI异常: \n" + e.Exception.ToString(), "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
         private static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
-            // 记录异常，然后显示它。
-            MessageBox.Show("Unhandled Application Exception: " + (e.ExceptionObject as Exception)?.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            Exception? ex = e.ExceptionObject as Exception;
+            string errorMessage = ex?.ToString() ?? "一个未知的应用程序错误发生了。";
+            // TODO: 将异常记录到日志文件
+            // File.AppendAllText("error.log", errorMessage);
+            MessageBox.Show("发生了一个未处理的应用程序异常: \n" + errorMessage, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }

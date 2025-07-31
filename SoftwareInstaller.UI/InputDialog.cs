@@ -1,4 +1,4 @@
-
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -6,50 +6,47 @@ namespace SoftwareInstaller.UI
 {
     public class InputDialog : Form
     {
-        private Label promptLabel;
         private TextBox inputTextBox;
         private Button okButton;
         private Button cancelButton;
-
-        public string InputText { get; private set; } = string.Empty;
+        public string? InputText => inputTextBox.Text;
 
         public InputDialog(string title, string prompt)
         {
             this.Text = title;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.StartPosition = FormStartPosition.CenterParent;
-            this.ClientSize = new Size(380, 120);
-            this.ControlBox = false;
+            this.ClientSize = new Size(350, 140);
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+            this.ShowInTaskbar = false;
+            this.Font = new Font("Segoe UI", 9F);
 
-            promptLabel = new Label()
+            Label promptLabel = new Label
             {
                 Text = prompt,
-                Location = new Point(20, 20),
-                AutoSize = true,
-                Font = new Font("Segoe UI", 9F)
+                AutoSize = false,
+                Location = new Point(15, 15),
+                Size = new Size(320, 30)
             };
-
-            inputTextBox = new TextBox()
+            inputTextBox = new TextBox
             {
-                Location = new Point(20, 50),
-                Size = new Size(340, 23),
-                Font = new Font("Segoe UI", 9F)
+                Location = new Point(15, 50),
+                Size = new Size(320, 23)
             };
-
-            okButton = new Button()
+            okButton = new Button
             {
                 Text = "确定",
                 DialogResult = DialogResult.OK,
-                Location = new Point(200, 80),
-                Size = new Size(75, 25)
+                Location = new Point(170, 90),
+                Size = new Size(75, 28)
             };
-
-            cancelButton = new Button()
+            cancelButton = new Button
             {
                 Text = "取消",
                 DialogResult = DialogResult.Cancel,
-                Location = new Point(285, 80),
-                Size = new Size(75, 25)
+                Location = new Point(260, 90),
+                Size = new Size(75, 28)
             };
 
             this.Controls.Add(promptLabel);
@@ -59,11 +56,6 @@ namespace SoftwareInstaller.UI
 
             this.AcceptButton = okButton;
             this.CancelButton = cancelButton;
-
-            okButton.Click += (sender, e) => {
-                InputText = inputTextBox.Text;
-                this.DialogResult = DialogResult.OK;
-            };
         }
     }
 }
