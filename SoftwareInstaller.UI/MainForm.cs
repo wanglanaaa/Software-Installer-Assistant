@@ -390,9 +390,11 @@ namespace SoftwareInstaller.UI
                         var fileInfo = new FileInfo(newSoftware.FilePath);
                         var versionInfo = FileVersionInfo.GetVersionInfo(newSoftware.FilePath);
 
-                        newSoftware.Name = versionInfo.FileDescription ?? Path.GetFileNameWithoutExtension(fileInfo.Name);
-                        newSoftware.Version = versionInfo.FileVersion ?? "N/A";
+                        // 优先使用 ProductName，并对所有字符串进行 Trim() 操作以移除多余的空格
+                        newSoftware.Name = (versionInfo.ProductName ?? versionInfo.FileDescription ?? Path.GetFileNameWithoutExtension(fileInfo.Name)).Trim();
+                        newSoftware.Version = (versionInfo.FileVersion ?? "N/A").Trim();
                         newSoftware.Size = $"{(fileInfo.Length / 1024.0 / 1024.0):F2} MB";
+                        newSoftware.Description = (versionInfo.FileDescription ?? string.Empty).Trim();
                     }
                     catch (Exception ex)
                     {
