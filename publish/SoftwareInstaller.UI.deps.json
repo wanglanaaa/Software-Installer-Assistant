@@ -1,0 +1,73 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v9.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v9.0": {
+      "SoftwareInstaller.UI/1.0.0": {
+        "dependencies": {
+          "SoftwareInstaller.Core": "1.0.0",
+          "SoftwareInstaller.Models": "1.0.0",
+          "SoftwareInstaller.Utils": "1.0.0"
+        },
+        "runtime": {
+          "SoftwareInstaller.UI.dll": {}
+        }
+      },
+      "SoftwareInstaller.Core/1.0.0": {
+        "dependencies": {
+          "SoftwareInstaller.Models": "1.0.0"
+        },
+        "runtime": {
+          "SoftwareInstaller.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "SoftwareInstaller.Models/1.0.0": {
+        "runtime": {
+          "SoftwareInstaller.Models.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "SoftwareInstaller.Utils/1.0.0": {
+        "dependencies": {
+          "SoftwareInstaller.Models": "1.0.0"
+        },
+        "runtime": {
+          "SoftwareInstaller.Utils.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "SoftwareInstaller.UI/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "SoftwareInstaller.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "SoftwareInstaller.Models/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "SoftwareInstaller.Utils/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

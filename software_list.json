@@ -1,0 +1,122 @@
+[
+  {
+    "Name": "WeChat",
+    "Version": "",
+    "Size": "",
+    "Description": "\u5FAE\u4FE1 PC \u7248",
+    "IsSelected": false,
+    "Category": "\u793E\u4EA4",
+    "FilePath": null,
+    "SilentInstallArgs": "/S"
+  },
+  {
+    "Name": "QQ",
+    "Version": "",
+    "Size": "",
+    "Description": "QQ PC \u7248",
+    "IsSelected": false,
+    "Category": "\u793E\u4EA4",
+    "FilePath": null,
+    "SilentInstallArgs": "/S"
+  },
+  {
+    "Name": "SogouPinyin",
+    "Version": "",
+    "Size": "",
+    "Description": "\u641C\u72D7\u8F93\u5165\u6CD5",
+    "IsSelected": false,
+    "Category": "\u8F93\u5165\u6CD5",
+    "FilePath": null,
+    "SilentInstallArgs": "/S"
+  },
+  {
+    "Name": "DingTalk",
+    "Version": "",
+    "Size": "",
+    "Description": "\u9489\u9489",
+    "IsSelected": true,
+    "Category": "\u529E\u516C",
+    "FilePath": null,
+    "SilentInstallArgs": "/S"
+  },
+  {
+    "Name": "WeCom",
+    "Version": "",
+    "Size": "",
+    "Description": "\u4F01\u4E1A\u5FAE\u4FE1",
+    "IsSelected": true,
+    "Category": "\u529E\u516C",
+    "FilePath": null,
+    "SilentInstallArgs": "/S"
+  },
+  {
+    "Name": "TencentMeeting",
+    "Version": "",
+    "Size": "",
+    "Description": "\u817E\u8BAF\u4F1A\u8BAE",
+    "IsSelected": true,
+    "Category": "\u529E\u516C",
+    "FilePath": null,
+    "SilentInstallArgs": "/SilentInstall=0"
+  },
+  {
+    "Name": "NeteaseMusic",
+    "Version": "",
+    "Size": "",
+    "Description": "\u7F51\u6613\u4E91\u97F3\u4E50",
+    "IsSelected": false,
+    "Category": "\u5F71\u97F3",
+    "FilePath": null,
+    "SilentInstallArgs": "/S"
+  },
+  {
+    "Name": "WPS Office",
+    "Version": "",
+    "Size": "",
+    "Description": "WPS Office",
+    "IsSelected": true,
+    "Category": "\u529E\u516C",
+    "FilePath": null,
+    "SilentInstallArgs": "/S"
+  },
+  {
+    "Name": "360 Security Guard",
+    "Version": "",
+    "Size": "",
+    "Description": "360\u5B89\u5168\u536B\u58EB",
+    "IsSelected": false,
+    "Category": "\u5B89\u5168",
+    "FilePath": null,
+    "SilentInstallArgs": "/S"
+  },
+  {
+    "Name": "Huorong Security",
+    "Version": "",
+    "Size": "",
+    "Description": "\u706B\u7ED2\u5B89\u5168",
+    "IsSelected": false,
+    "Category": "\u5B89\u5168",
+    "FilePath": null,
+    "SilentInstallArgs": "/S"
+  },
+  {
+    "Name": "\u5FAE\u4FE1\u7535\u8111\u7248",
+    "Version": "4.0.6.1000",
+    "Size": "194.26 MB",
+    "Description": "\u5FAE\u4FE1\u7535\u8111\u7248\u5B89\u88C5\u7A0B\u5E8F",
+    "IsSelected": true,
+    "Category": "\u529E\u516C",
+    "FilePath": "C:\\Users\\win11\\Downloads\\WeChatWin.exe",
+    "SilentInstallArgs": null
+  },
+  {
+    "Name": "WinRAR 5.31x64",
+    "Version": "N/A",
+    "Size": "1.97 MB",
+    "Description": "",
+    "IsSelected": true,
+    "Category": "\u529E\u516C",
+    "FilePath": "C:\\Users\\win11\\Desktop\\WinRAR 5.31x64.exe",
+    "SilentInstallArgs": "/S"
+  }
+]
