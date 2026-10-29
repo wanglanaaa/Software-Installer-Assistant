@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../assets/app-icon.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/AppBranding.cs" Link="AppBranding.cs" />
+    <EmbeddedResource Include="../assets/app-icon.ico" LogicalName="SoftwareInstaller.AppIcon.ico" />
+  </ItemGroup>
+  <ItemGroup><ProjectReference Include="../SoftwareInstaller.Packaging/SoftwareInstaller.Packaging.csproj" /></ItemGroup>
+</Project>

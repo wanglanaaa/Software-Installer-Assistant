@@ -14,17 +14,33 @@ namespace SoftwareInstaller.Core
     {
         private List<SoftwareItem> _knownSoftwareItems; // 内部知识库
         public List<SoftwareItem> ActiveSoftwareItems { get; private set; } // 当前UI操作的列表
+        public List<string> ActiveCategories { get; } = new();
+        private readonly CategoryStore categoryStore = new();
         private const string ConfigPath = "software_list.json";
+        private readonly bool useDefaultStorage;
 
-        private static readonly List<string> SilentArgsList = new List<string>
-        {
-            "/S", "/VERYSILENT", "/SILENT", "/q", "/qn", "/s", "/quiet"
-        };
 
-        public SoftwareManager()
+        public SoftwareManager(bool useDefaultStorage = true)
         {
-            _knownSoftwareItems = LoadSoftwareItems();
+            this.useDefaultStorage = useDefaultStorage;
+            _knownSoftwareItems = useDefaultStorage ? LoadSoftwareItems() : new();
             ActiveSoftwareItems = new List<SoftwareItem>(); // 启动时，活动列表为空
+            if (useDefaultStorage) ActiveCategories.AddRange(categoryStore.Load(_knownSoftwareItems.Select(s => s.Category)));
+        }
+
+        public void AddCategory(string name)
+        {
+            name = name.Trim();
+            if (name.Length == 0 || ActiveCategories.Contains(name, StringComparer.OrdinalIgnoreCase)) return;
+            if (useDefaultStorage) categoryStore.Save(ActiveCategories.Append(name));
+            ActiveCategories.Add(name);
+        }
+
+        public void RemoveCategory(string name)
+        {
+            if (useDefaultStorage) categoryStore.Save(ActiveCategories.Where(c => !c.Equals(name, StringComparison.OrdinalIgnoreCase)));
+            ActiveCategories.RemoveAll(c => c.Equals(name, StringComparison.OrdinalIgnoreCase));
+            ActiveSoftwareItems.RemoveAll(s => s.Category.Equals(name, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>
@@ -36,69 +52,17 @@ namespace SoftwareInstaller.Core
             // 尝试在知识库中寻找匹配的软件（这里使用软件名称作为唯一标识）
             var knownItem = _knownSoftwareItems.FirstOrDefault(item => item.Name.Equals(newSoftware.Name, StringComparison.OrdinalIgnoreCase));
 
-            if (knownItem != null)
+            if (knownItem != null && string.IsNullOrWhiteSpace(newSoftware.SilentInstallArgs))
             {
                 // 如果找到了，就用知识库中的信息（特别是静默参数）来更新新软件对象
                 newSoftware.SilentInstallArgs = knownItem.SilentInstallArgs;
-                newSoftware.Category = knownItem.Category; // 也可以同步分类等其他信息
             }
 
             // 将处理过的新软件添加到活动列表中
-            ActiveSoftwareItems.Add(newSoftware);
-        }
-
-        public async Task<(bool success, string? usedArgs)> InstallSoftwareIntelligently(SoftwareItem item, Func<Task<bool>> installCompletedCallback)
-        {
-            if (string.IsNullOrEmpty(item.FilePath) || !File.Exists(item.FilePath))
-            {
-                throw new FileNotFoundException("安装文件未找到。", item.FilePath);
-            }
-
-            if (!string.IsNullOrEmpty(item.SilentInstallArgs))
-            {
-                if (await TryInstall(item.FilePath, item.SilentInstallArgs) && await installCompletedCallback())
-                {
-                    return (true, item.SilentInstallArgs);
-                }
-            }
-
-            foreach (var args in SilentArgsList)
-            {
-                if (await TryInstall(item.FilePath, args) && await installCompletedCallback())
-                {
-                    item.SilentInstallArgs = args; // 学习到了新参数
-                    SaveSoftwareList(); // 立即保存，确保知识不丢失
-                    return (true, args);
-                }
-            }
-
-            return (false, null);
-        }
-
-        private async Task<bool> TryInstall(string filePath, string args)
-        {
-            try
-            {
-                using var process = ProcessRunner.StartProcess(filePath, args);
-                if (process == null) return false;
-
-                await Task.Delay(2000);
-
-                if (WindowDetector.HasVisibleWindow(process.Id))
-                {
-                    process.Kill();
-                    return false;
-                }
-
-                var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-                await process.WaitForExitAsync(cts.Token);
-
-                return process.ExitCode == 0;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
+            var existing = ActiveSoftwareItems.FindIndex(s => s.Id == newSoftware.Id);
+            if (existing >= 0) ActiveSoftwareItems[existing] = newSoftware;
+            else ActiveSoftwareItems.Add(newSoftware);
+            AddCategory(newSoftware.Category);
         }
 
         /// <summary>
@@ -106,33 +70,30 @@ namespace SoftwareInstaller.Core
         /// </summary>
         public void SaveSoftwareList()
         {
+            if (!useDefaultStorage) return;
             try
             {
-                // 过滤出那些已经成功学习到静默参数的活动项
-                var valuableItems = ActiveSoftwareItems.Where(item => !string.IsNullOrEmpty(item.SilentInstallArgs));
+                // Save preparation work too; verification remains an explicit separate state.
+                var valuableItems = ActiveSoftwareItems;
 
                 foreach (var valuableItem in valuableItems)
                 {
-                    var knownItem = _knownSoftwareItems.FirstOrDefault(item => item.Name.Equals(valuableItem.Name, StringComparison.OrdinalIgnoreCase));
+                    var knownItem = _knownSoftwareItems.FirstOrDefault(item => item.Id == valuableItem.Id);
                     if (knownItem != null)
                     {
                         // 如果知识库中已存在，则用最新的、有价值的信息更新它
-                        knownItem.Version = valuableItem.Version;
-                        knownItem.Description = valuableItem.Description;
-                        knownItem.Category = valuableItem.Category;
-                        knownItem.FilePath = valuableItem.FilePath; // 更新路径以反映最新选择
-                        knownItem.SilentInstallArgs = valuableItem.SilentInstallArgs; // 更新或确认静默参数
+                        _knownSoftwareItems[_knownSoftwareItems.IndexOf(knownItem)] = valuableItem.Clone();
                     }
                     else
                     {
                         // 如果是全新的、且有价值的软件，则添加到知识库
-                        _knownSoftwareItems.Add(valuableItem);
+                        _knownSoftwareItems.Add(valuableItem.Clone());
                     }
                 }
 
                 // 将完整的、高质量的知识库序列化并写入文件
                 string jsonString = JsonSerializer.Serialize(_knownSoftwareItems, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(ConfigPath, jsonString);
+                UserDataPaths.Write(ConfigPath, jsonString);
             }
             catch (Exception ex)
             {
@@ -140,16 +101,27 @@ namespace SoftwareInstaller.Core
             }
         }
 
+        public void ReplaceActiveList(IEnumerable<SoftwareItem> software, IEnumerable<string> categories)
+        {
+            var copies = software.Select(s => s.Clone()).ToList();
+            var names = CategoryNames.Normalize(categories.Concat(copies.Select(s => s.Category)));
+            ActiveSoftwareItems.Clear();
+            ActiveSoftwareItems.AddRange(copies);
+            ActiveCategories.Clear();
+            ActiveCategories.AddRange(names);
+        }
+
         private List<SoftwareItem> LoadSoftwareItems()
         {
-            if (!File.Exists(ConfigPath))
+            var path = UserDataPaths.ReadPath(ConfigPath);
+            if (!File.Exists(path))
             {
                 return new List<SoftwareItem>();
             }
 
             try
             {
-                string jsonString = File.ReadAllText(ConfigPath);
+                string jsonString = File.ReadAllText(path);
                 return JsonSerializer.Deserialize<List<SoftwareItem>>(jsonString) ?? new List<SoftwareItem>();
             }
             catch (Exception ex)

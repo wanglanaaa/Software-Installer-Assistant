@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\SoftwareInstaller.Packaging\SoftwareInstaller.Packaging.csproj" />
     <ProjectReference Include="..\SoftwareInstaller.Core\SoftwareInstaller.Core.csproj" />
     <ProjectReference Include="..\SoftwareInstaller.Models\SoftwareInstaller.Models.csproj" />
     <ProjectReference Include="..\SoftwareInstaller.Utils\SoftwareInstaller.Utils.csproj" />
@@ -12,6 +13,17 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>../assets/app-icon.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../Shared/AppBranding.cs" Link="AppBranding.cs" />
+    <EmbeddedResource Include="../assets/app-icon.ico" LogicalName="SoftwareInstaller.AppIcon.ico" />
+    <Content Include="../artifacts/runner/SoftwareInstaller.Runner.exe" Condition="Exists('../artifacts/runner/SoftwareInstaller.Runner.exe')">
+      <Link>Runner/SoftwareInstaller.Runner.exe</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
 
 </Project>

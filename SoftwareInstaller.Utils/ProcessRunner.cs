@@ -7,6 +7,15 @@ namespace SoftwareInstaller.Utils
 {
     public static class ProcessRunner
     {
+        public static Process? StartProcess(SoftwareItem item, string args, bool silent = true)
+        {
+            if (item.DirectoryMode != InstallDirectoryMode.Automatic || InstallerInspector.Inspect(item.FilePath).DirectoryMode != InstallDirectoryMode.Automatic)
+                InstallDirectoryOptions.CheckTargetDrive(item.DefaultInstallDirectory);
+            var arguments = InstallDirectoryOptions.BuildArguments(item, args);
+            bool isMsi = string.Equals(System.IO.Path.GetExtension(item.FilePath), ".msi", System.StringComparison.OrdinalIgnoreCase);
+            return StartProcess(isMsi ? System.IO.Path.Combine(System.Environment.SystemDirectory, "msiexec.exe") : item.FilePath!,
+                isMsi ? $"/i {InstallDirectoryOptions.Quote(item.FilePath!)} {arguments} {(silent ? "/qn /norestart REBOOT=ReallySuppress" : "")}" : arguments);
+        }
         public static Process? StartProcess(string filePath, string args)
         {
             try
@@ -36,20 +45,10 @@ namespace SoftwareInstaller.Utils
 
             try
             {
-                ProcessStartInfo startInfo = new ProcessStartInfo();
-                startInfo.UseShellExecute = true;
-                startInfo.Verb = "runas";
-                startInfo.FileName = item.FilePath;
-                if (isAuto)
-                {
-                    if (string.IsNullOrEmpty(item.SilentInstallArgs))
-                    {
-                        MessageBox.Show($"软件 '{item.Name}' 未提供静默安装参数，无法自动安装。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-                    startInfo.Arguments = item.SilentInstallArgs;
-                }
-                Process.Start(startInfo);
+                if (isAuto && string.IsNullOrEmpty(item.SilentInstallArgs) && !string.Equals(System.IO.Path.GetExtension(item.FilePath), ".msi", System.StringComparison.OrdinalIgnoreCase))
+                    throw new System.InvalidOperationException("未提供静默参数，无法自动安装。");
+                using var process = StartProcess(item, isAuto ? item.SilentInstallArgs ?? "" : "", isAuto);
+                if (process == null) throw new System.InvalidOperationException("安装器未启动，可能取消了管理员授权。");
             }
             catch (System.Exception ex)
             {

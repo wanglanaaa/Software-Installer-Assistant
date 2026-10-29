@@ -1,47 +1,42 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Text.Json;
 using SoftwareInstaller.Models;
-using SoftwareInstaller.Utils;
 
-namespace SoftwareInstaller.Core
+namespace SoftwareInstaller.Core;
+
+public static class SchemeManager
 {
-    public static class SchemeManager
+    private sealed class SchemeFile
     {
-        private static readonly string AppDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        private static readonly string AppFolderPath = Path.Combine(AppDataPath, "SoftwareInstaller");
-        private static readonly string SchemeFilePath = Path.Combine(AppFolderPath, "schemes.json");
+        public int FormatVersion { get; set; } = 2;
+        public Dictionary<string, SchemeDefinition> Schemes { get; set; } = new();
+    }
 
-        public static Dictionary<string, List<SoftwareItem>> LoadSchemes()
+    public static Dictionary<string, SchemeDefinition> LoadSchemes(string? storagePath = null)
+    {
+        var path = storagePath ?? UserDataPaths.ReadPath("schemes.json");
+        if (!File.Exists(path)) return new();
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        Dictionary<string, SchemeDefinition> schemes;
+        if (document.RootElement.TryGetProperty("FormatVersion", out var version) && version.ValueKind == JsonValueKind.Number)
         {
-            try
-            {
-                if (File.Exists(SchemeFilePath))
-                {
-                    string jsonString = File.ReadAllText(SchemeFilePath);
-                    return JsonSerializer.Deserialize<Dictionary<string, List<SoftwareItem>>>(jsonString) ?? new Dictionary<string, List<SoftwareItem>>();
-                }
-            }
-            catch (Exception ex)
-            {
-                ErrorHandler.ShowError($"加载方案文件失败.\n错误: {ex.Message}");
-            }
-            return new Dictionary<string, List<SoftwareItem>>();
+            if (version.GetInt32() != 2) throw new InvalidDataException("不支持的安装方案版本。");
+            schemes = document.RootElement.Deserialize<SchemeFile>()?.Schemes ?? new();
         }
+        else
+        {
+            // v1 stored only software lists; recover non-empty categories without discarding old schemes.
+            var legacy = document.RootElement.Deserialize<Dictionary<string, List<SoftwareItem>>>() ?? new();
+            schemes = legacy.ToDictionary(p => p.Key, p => new SchemeDefinition { Software = p.Value, Categories = CategoryNames.Normalize(p.Value.Select(s => s.Category)) });
+        }
+        foreach (var scheme in schemes.Values)
+            scheme.Categories = CategoryNames.Normalize(scheme.Categories.Concat(scheme.Software.Select(s => s.Category)));
+        return schemes;
+    }
 
-        public static void SaveSchemes(Dictionary<string, List<SoftwareItem>> schemes)
-        {
-            try
-            {
-                Directory.CreateDirectory(AppFolderPath);
-                string jsonString = JsonSerializer.Serialize(schemes, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(SchemeFilePath, jsonString);
-            }
-            catch (Exception ex)
-            {
-                ErrorHandler.ShowError($"保存方案文件失败.\n错误: {ex.Message}");
-            }
-        }
+    public static void SaveSchemes(Dictionary<string, SchemeDefinition> schemes, string? storagePath = null)
+    {
+        var json = JsonSerializer.Serialize(new SchemeFile { Schemes = schemes }, new JsonSerializerOptions { WriteIndented = true });
+        if (storagePath == null) UserDataPaths.Write("schemes.json", json);
+        else UserDataPaths.WriteFile(storagePath, json);
     }
 }

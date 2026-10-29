@@ -27,3 +27,5 @@ project.nuget.cache
 # Other
 git-installer.exe
 schemes_debug.json
+.build/
+artifacts/

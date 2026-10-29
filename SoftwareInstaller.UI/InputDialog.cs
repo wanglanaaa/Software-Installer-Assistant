@@ -13,6 +13,7 @@ namespace SoftwareInstaller.UI
 
         public InputDialog(string title, string prompt)
         {
+            AppBranding.Apply(this);
             this.Text = title;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.StartPosition = FormStartPosition.CenterParent;
