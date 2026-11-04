@@ -45,7 +45,28 @@ public static class ConfigurationStore
     public static void Save(string path, WorkspaceConfiguration configuration)
     {
         Validate(configuration);
-        UserDataPaths.WriteFile(path, Serialize(configuration));
+        string baseDirectory = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        SoftwareItem ForStorage(SoftwareItem item)
+        {
+            var copy = item.Clone();
+            copy.Id = item.Id; // Legacy identifiers must not change when the stored path becomes relative.
+            string? Relative(string? value) => string.IsNullOrWhiteSpace(value) ? value
+                : Path.GetRelativePath(baseDirectory, Path.GetFullPath(value, baseDirectory));
+            copy.FilePath = Relative(item.FilePath);
+            copy.ResourceDirectory = Relative(item.ResourceDirectory);
+            return copy;
+        }
+        var stored = new WorkspaceConfiguration
+        {
+            FormatVersion = configuration.FormatVersion,
+            Software = configuration.Software.Select(ForStorage).ToList(),
+            Categories = new(configuration.Categories),
+            Schemes = configuration.Schemes.ToDictionary(p => p.Key, p => new SchemeDefinition
+            {
+                Software = p.Value.Software.Select(ForStorage).ToList(), Categories = new(p.Value.Categories)
+            })
+        };
+        UserDataPaths.WriteFile(path, Serialize(stored));
     }
 
     public static string Serialize(WorkspaceConfiguration configuration) => JsonSerializer.Serialize(configuration, JsonOptions);

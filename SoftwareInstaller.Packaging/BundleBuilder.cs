@@ -83,7 +83,7 @@ public static class BundleBuilder
             var errors = CheckItem(item);
             if (errors.Count > 0) throw new InvalidDataException($"{item.Name}：{string.Join("；", errors)}");
         }
-        if (!File.Exists(request.RunnerPath)) throw new FileNotFoundException("未找到自包含执行器，请先运行发布脚本。", request.RunnerPath);
+        RunnerTemplate.Validate(request.RunnerPath);
         var output = Path.GetFullPath(request.OutputPath);
         if (!output.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("输出文件必须是 .exe。");
         if (output.Equals(Path.GetFullPath(request.RunnerPath), StringComparison.OrdinalIgnoreCase))
@@ -95,18 +95,15 @@ public static class BundleBuilder
         foreach (var item in request.Software)
         {
             var source = Path.GetFullPath(item.FilePath!);
-            var files = new List<(string Source, string Relative)>();
+            var files = GetSourceFiles(item);
             if (!string.IsNullOrWhiteSpace(item.ResourceDirectory))
             {
                 var root = Path.GetFullPath(item.ResourceDirectory);
-                CollectFiles(root, root, files);
                 if (output.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("输出位置不能位于关联资源目录内。");
             }
-            else files.Add((source, Path.GetFileName(source)));
             foreach (var file in files)
             {
-                PackagePaths.Resolve(Path.GetTempPath(), file.Relative);
                 if (file.Source.Equals(output, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("不能覆盖源安装文件。");
             }
             var installer = string.IsNullOrWhiteSpace(item.ResourceDirectory) ? Path.GetFileName(source) :
@@ -127,7 +124,7 @@ public static class BundleBuilder
             // Conservative scratch-space estimate: original size + output + headroom.
             long totalBytes = allFiles.Sum(f => new FileInfo(f.Source).Length);
             var drive = new DriveInfo(Path.GetPathRoot(output)!);
-            if (drive.AvailableFreeSpace < totalBytes * 2 + new FileInfo(request.RunnerPath).Length + 100L * 1024 * 1024)
+            if (drive.AvailableFreeSpace < totalBytes * 2 + new FileInfo(request.RunnerPath).Length + BundleOverview.SpaceHeadroom)
                 throw new IOException("输出磁盘空间不足，请选择其他位置。");
             var hashes = new HashSet<string>(StringComparer.Ordinal);
             int completed = 0;
@@ -186,6 +183,23 @@ public static class BundleBuilder
             if (File.Exists(staging)) File.Delete(staging);
             if (File.Exists(archivePath)) File.Delete(archivePath);
         }
+    }
+
+    internal static List<(string Source, string Relative)> GetSourceFiles(SoftwareItem item)
+    {
+        var files = new List<(string Source, string Relative)>();
+        if (!string.IsNullOrWhiteSpace(item.ResourceDirectory))
+        {
+            var root = Path.GetFullPath(item.ResourceDirectory);
+            CollectFiles(root, root, files);
+        }
+        else
+        {
+            var source = Path.GetFullPath(item.FilePath!);
+            files.Add((source, Path.GetFileName(source)));
+        }
+        foreach (var file in files) PackagePaths.Resolve(Path.GetTempPath(), file.Relative);
+        return files;
     }
 
     private static void CollectFiles(string root, string folder, List<(string Source, string Relative)> files)

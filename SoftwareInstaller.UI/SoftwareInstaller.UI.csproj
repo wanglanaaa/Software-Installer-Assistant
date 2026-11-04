@@ -9,6 +9,8 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <AssemblyName>软件安装助理</AssemblyName>
+    <RootNamespace>SoftwareInstaller.UI</RootNamespace>
     <TargetFramework>net9.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
@@ -19,6 +21,7 @@
   <ItemGroup>
     <Compile Include="../Shared/AppBranding.cs" Link="AppBranding.cs" />
     <EmbeddedResource Include="../assets/app-icon.ico" LogicalName="SoftwareInstaller.AppIcon.ico" />
+    <EmbeddedResource Include="../assets/app-icon.png" LogicalName="SoftwareInstaller.AppLogo.png" />
     <Content Include="../artifacts/runner/SoftwareInstaller.Runner.exe" Condition="Exists('../artifacts/runner/SoftwareInstaller.Runner.exe')">
       <Link>Runner/SoftwareInstaller.Runner.exe</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

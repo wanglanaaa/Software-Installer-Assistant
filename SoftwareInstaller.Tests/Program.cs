@@ -12,7 +12,7 @@ using SoftwareInstaller.Runner;
 
 namespace SoftwareInstaller.Tests;
 
-internal static class Program
+internal static partial class Program
 {
     private static int passed;
     private static string root = "";
@@ -48,6 +48,26 @@ internal static class Program
             runner = Path.GetFullPath("artifacts/runner/SoftwareInstaller.Runner.exe");
             Directory.CreateDirectory(root);
             UserDataPaths.DataDirectoryOverride = Path.Combine(root, "user-data");
+            if (args.Contains("--overview-only"))
+            {
+                TestBundleOverview();
+                Console.WriteLine($"PASS: {passed} overview checks. Preview: {root}"); return 0;
+            }
+            if (args.Contains("--resource-paths-only"))
+            {
+                TestResourcePaths();
+                Console.WriteLine($"PASS: {passed} resource path checks. Preview: {root}"); return 0;
+            }
+            if (args.Contains("--ordering-only"))
+            {
+                TestManualOrdering();
+                Console.WriteLine($"PASS: {passed} ordering checks. Preview: {root}"); return 0;
+            }
+            if (args.Contains("--first-round"))
+            {
+                FirstRoundAsync().GetAwaiter().GetResult();
+                Console.WriteLine($"PASS: {passed} first-round checks. Artifacts: {root}"); return 0;
+            }
             if (args.Contains("--branding-only"))
             {
                 TestNameAndBranding();
@@ -102,7 +122,7 @@ internal static class Program
         using var runnerForm = new InstallForm(Path.Combine(root, "not-started.exe"));
         Assert(new Form[] { main, editor, existing, wizard, input, runnerForm }.All(f => f.ShowIcon && f.Icon?.Size == new Size(32, 32)),
             "main, editor, wizard, input and installer windows load the embedded application icon");
-        using var exeIcon = Icon.ExtractAssociatedIcon(Path.Combine(AppContext.BaseDirectory, "SoftwareInstaller.UI.exe"));
+        using var exeIcon = Icon.ExtractAssociatedIcon(Path.Combine(AppContext.BaseDirectory, typeof(MainForm).Assembly.GetName().Name + ".exe"));
         using var exeBitmap = exeIcon?.ToBitmap(); using var windowBitmap = main.Icon!.ToBitmap();
         Assert(exeBitmap != null && exeBitmap.GetPixel(16, 16).ToArgb() == windowBitmap.GetPixel(16, 16).ToArgb(),
             "the executable file uses the same icon as its window");

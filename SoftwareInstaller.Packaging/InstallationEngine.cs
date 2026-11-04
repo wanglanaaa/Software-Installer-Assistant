@@ -7,7 +7,18 @@ namespace SoftwareInstaller.Packaging;
 
 public enum InstallState { Succeeded, Skipped, Failed, RebootRequired, Uncertain }
 public sealed record InstallResult(string Id, string Name, InstallState State, string Message, int? ExitCode = null);
-public sealed record InstallUpdate(string Id, string Message, int Completed, int Total, InstallResult? Result = null);
+public enum InstallPhase { Checking, Installing, WaitingForUser, Verifying }
+public sealed record InstallUpdate(string Id, string Message, int Completed, int Total, InstallResult? Result = null, InstallPhase Phase = InstallPhase.Checking)
+{
+    public string StateText => Result != null ? Result.State switch
+    {
+        InstallState.Succeeded => "已完成", InstallState.Skipped => "已跳过", InstallState.Failed => "失败",
+        InstallState.RebootRequired => "需要重启", _ => "待人工检查"
+    } : Phase switch
+    {
+        InstallPhase.Installing => "正在安装", InstallPhase.WaitingForUser => "等待你操作", InstallPhase.Verifying => "验证安装结果", _ => "检查安装条件"
+    };
+}
 
 public static class InstallationEngine
 {
@@ -115,7 +126,7 @@ public static class InstallationEngine
                     var message = interactive ? $"请在 {item.Name} 的安装界面中完成操作" : $"正在自动安装：{item.Name}";
                     if (fallback) message = $"{item.Name} 的静默参数未成功，已切换普通安装，请按窗口提示操作";
                     if (directoryNeedsUi || fallback && !string.IsNullOrWhiteSpace(item.DefaultInstallDirectory)) message += $"；请确认安装位置 {item.DefaultInstallDirectory}";
-                    progress?.Report(new(item.Id, message, completed, total));
+                    progress?.Report(new(item.Id, message, completed, total, Phase: interactive ? InstallPhase.WaitingForUser : InstallPhase.Installing));
                     await LogAsync(message);
                     var info = CreateStartInfo(item, installer, logDirectory, interactive, fallback, requestElevation);
                     using var process = Process.Start(info) ?? throw new IOException("无法启动安装程序。");
@@ -136,6 +147,7 @@ public static class InstallationEngine
                     if (reboot) return new(item.Id, item.Name, InstallState.RebootRequired, "安装器报告完成，需要重启后复核。", code);
                     if (HasDetection(item))
                     {
+                        progress?.Report(new(item.Id, $"正在验证 {item.Name} 的安装结果", completed, total, Phase: InstallPhase.Verifying));
                         bool installed = IsInstalled(item);
                         for (int retry = 0; retry < 10 && !installed; retry++) { await Task.Delay(1000); installed = IsInstalled(item); }
                         if (!installed) return new(item.Id, item.Name, InstallState.Uncertain, "安装器已退出但检测未通过，队列已暂停，请检查软件是否安装完成。", code);

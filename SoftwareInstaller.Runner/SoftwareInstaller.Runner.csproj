@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="../Shared/AppBranding.cs" Link="AppBranding.cs" />
     <EmbeddedResource Include="../assets/app-icon.ico" LogicalName="SoftwareInstaller.AppIcon.ico" />
+    <EmbeddedResource Include="../assets/app-icon.png" LogicalName="SoftwareInstaller.AppLogo.png" />
   </ItemGroup>
   <ItemGroup><ProjectReference Include="../SoftwareInstaller.Packaging/SoftwareInstaller.Packaging.csproj" /></ItemGroup>
 </Project>

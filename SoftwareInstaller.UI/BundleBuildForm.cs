@@ -15,6 +15,10 @@ public sealed class BundleBuildForm : Form
     private readonly CheckBox onlyChecked = new() { Text = "仅打包当前勾选软件（自动加入前置软件）", AutoSize = true };
     private readonly CheckedListBox schemes = new() { Dock = DockStyle.Fill, CheckOnClick = true };
     private readonly ListView checks = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true };
+    private readonly Label checkOverview = new() { Dock = DockStyle.Top, Height = 76, Text = "检查后显示本次打包概览。" };
+    private readonly TextBox overviewText = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = SystemColors.Window };
+    private readonly Label outputSpace = new() { Dock = DockStyle.Bottom, Height = 44, TextAlign = ContentAlignment.MiddleLeft };
+    private BundleOverview? overview;
     private readonly TextBox name = new() { Text = "我的软件合集", Dock = DockStyle.Top };
     private readonly TextBox output = new() { Dock = DockStyle.Top, ReadOnly = true };
     private readonly ComboBox defaultScheme = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
@@ -42,18 +46,28 @@ public sealed class BundleBuildForm : Form
         content.Controls.Add(schemes); content.Controls.Add(choices); content.Controls.Add(help);
         var checkPage = new TabPage("② 检查配置") { Padding = new(16) };
         checks.Columns.Add("软件", 210); checks.Columns.Add("检查结果", 480);
-        checkPage.Controls.Add(checks);
+        checks.ShowItemToolTips = true;
+        checks.Resize += (_, _) => { checks.Columns[0].Width = 160; checks.Columns[1].Width = Math.Max(200, checks.ClientSize.Width - 164); };
+        checkPage.Controls.Add(checks); checkPage.Controls.Add(checkOverview);
         var refresh = new Button { Text = "重新检查", Dock = DockStyle.Bottom, Height = 34 };
         refresh.Click += async (_, _) => await CheckAsync(); checkPage.Controls.Add(refresh);
-        var generate = new TabPage("③ 生成文件") { Padding = new(24) };
-        var fields = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1 };
-        void Field(string label, Control control) { fields.Controls.Add(new Label { Text = label, AutoSize = true, Margin = new(0, 12, 0, 4) }); control.Width = 600; control.Margin = new(0, 0, 0, 8); fields.Controls.Add(control); }
-        Field("包名称", name); Field("默认安装方案", defaultScheme); Field("输出 EXE", output);
-        var browse = new Button { Text = "选择输出位置…", AutoSize = true };
+        var generate = new TabPage("③ 生成文件") { Padding = new(16) };
+        var fields = new TableLayoutPanel { Dock = DockStyle.Top, Height = 114, ColumnCount = 3, RowCount = 3 };
+        fields.ColumnStyles.Add(new(SizeType.Absolute, 110)); fields.ColumnStyles.Add(new(SizeType.Percent, 100)); fields.ColumnStyles.Add(new(SizeType.Absolute, 132));
+        void Field(int row, string label, Control control)
+        {
+            fields.RowStyles.Add(new(SizeType.Percent, 100f / 3));
+            fields.Controls.Add(new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, row);
+            control.Dock = DockStyle.Fill; control.Margin = new(0, 6, 8, 6); fields.Controls.Add(control, 1, row);
+            if (row < 2) fields.SetColumnSpan(control, 2);
+        }
+        Field(0, "包名称", name); Field(1, "默认安装方案", defaultScheme); Field(2, "输出 EXE", output);
+        var browse = new Button { Text = "选择输出位置…", Dock = DockStyle.Fill, Margin = new(0, 2, 0, 6) };
         browse.Click += (_, _) => { using var dialog = new SaveFileDialog { Filter = "EXE 安装包|*.exe", FileName = "软件合集.exe", OverwritePrompt = false }; if (dialog.ShowDialog(this) == DialogResult.OK) output.Text = dialog.FileName; };
-        fields.Controls.Add(browse);
-        fields.Controls.Add(new Label { Text = "生成的安装包适用于 Windows x64，内置运行时。\n单文件上限约 3.4 GiB；联网安装器需要目标电脑联网。\n无法自动安装时，会打开软件原有安装界面。", AutoSize = true, Margin = new(0, 24, 0, 0) });
-        generate.Controls.Add(fields);
+        fields.Controls.Add(browse, 2, 2);
+        generate.Controls.Add(overviewText); generate.Controls.Add(outputSpace);
+        generate.Controls.Add(new Label { Text = "打包概览", Dock = DockStyle.Top, Height = 26, TextAlign = ContentAlignment.MiddleLeft }); generate.Controls.Add(fields);
+        output.TextChanged += (_, _) => UpdateOutputSpace();
         pages.TabPages.AddRange([content, checkPage, generate]);
         onlyChecked.CheckedChanged += (_, _) => ResetChecks();
         schemes.ItemCheck += (_, _) => ResetChecks();
@@ -88,7 +102,8 @@ public sealed class BundleBuildForm : Form
 
     private void ResetChecks()
     {
-        checkedReady = false; prepared = null; checks.Items.Clear(); defaultScheme.Items.Clear(); progress.Value = 0;
+        checkedReady = false; prepared = null; overview = null; checks.Items.Clear(); defaultScheme.Items.Clear(); progress.Value = 0;
+        checkOverview.Text = "检查后显示本次打包概览。"; overviewText.Clear(); outputSpace.Text = "选择输出位置后显示磁盘空间。";
         status.Text = "选择内容后点击下一步，将重新检查当前配置。";
     }
 
@@ -150,24 +165,78 @@ public sealed class BundleBuildForm : Form
         try
         {
             prepared = Prepare(); bool ready = true;
+            var descriptions = new List<BundleSoftware>();
             foreach (var item in prepared.Software)
             {
                 var errors = await Task.Run(() => BundleBuilder.CheckItem(item));
                 ready &= errors.Count == 0;
                 var row = checks.Items.Add(item.Name);
                 var description = errors.Count == 0 ? await Task.Run(() => BundleBuilder.Describe(item)) : null;
+                if (description != null) descriptions.Add(description);
                 row.SubItems.Add(errors.Count == 0 ? "可打包 · " + (description!.StartInteractively ? "普通安装" : "优先自动安装，失败时打开界面") +
-                    (item.RequiresNetwork ? "；需要联网" : "") : string.Join("；", errors));
+                    (item.RequiresNetwork ? "；需要联网" : "") +
+                    (!string.IsNullOrWhiteSpace(item.DefaultInstallDirectory) && description.DirectoryMode == InstallDirectoryMode.Automatic ? "；目录需在安装界面选择" : "") : string.Join("；", errors));
+                row.ToolTipText = row.SubItems[1].Text;
                 row.ForeColor = errors.Count == 0 ? Color.DarkGreen : Color.Firebrick;
             }
-            if (!File.Exists(prepared.RunnerPath)) { ready = false; checks.Items.Add("执行器").SubItems.Add("未找到自包含执行器，请先运行 scripts/publish-portable.ps1"); }
+            try { RunnerTemplate.Validate(prepared.RunnerPath); checks.Items.Add("安装器版本").SubItems.Add(RunnerTemplate.CurrentVersion); }
+            catch (Exception ex) when (ex is IOException or InvalidDataException)
+            { ready = false; checks.Items.Add("安装执行器").SubItems.Add(ex.Message); }
             InstallationEngine.Sort(prepared.Software.Select(s => new BundleSoftware { Id = s.Id, Name = s.Name, DependencyIds = s.DependencyIds, Order = s.InstallOrder }));
+            if (ready)
+            {
+                status.Text = "正在统计安装文件和关联资源大小…";
+                overview = await Task.Run(() => BundleOverview.Create(prepared, descriptions));
+                RenderOverview();
+            }
+            else checkOverview.Text = "检查未通过，请先修复下方问题；概览将在重新检查后更新。";
             defaultScheme.Items.Clear(); defaultScheme.Items.AddRange(prepared.Schemes.Keys.Cast<object>().ToArray()); defaultScheme.SelectedIndex = 0;
             checkedReady = ready;
             status.Text = ready ? $"检查通过：{prepared.Software.Count} 款软件，{prepared.Schemes.Count} 个方案。" : "请关闭此窗口，编辑对应软件后重新生成。";
         }
-        catch (Exception ex) { status.Text = ex.Message; }
+        catch (Exception ex) { overview = null; overviewText.Clear(); checkOverview.Text = "检查未完成，请修复问题后重新检查。"; status.Text = ex.Message; }
         finally { busy = false; next.Enabled = previous.Enabled = true; pages.Enabled = true; }
+    }
+
+    private void RenderOverview()
+    {
+        if (overview == null) return;
+        var summary = overview;
+        checkOverview.Text = $"本次包含 {summary.SoftwareCount} 款软件 · {summary.SchemeCount} 个方案 · {summary.CategoryCount} 个分类\n" +
+            $"资源原始合计 {BundleOverview.FormatBytes(summary.SourceBytes)} · {summary.FileCount} 个文件引用\n" +
+            $"需要联网 {summary.NetworkSoftware.Count} 款 · 打开安装界面 {summary.InteractiveSoftware.Count} 款 · 目录需手动选择 {summary.DirectorySelectionSoftware.Count} 款";
+        string Names(List<string> names) => names.Count == 0 ? "无" : $"{names.Count} 款：" + string.Join("、", names);
+        overviewText.Text = string.Join(Environment.NewLine, new[]
+        {
+            $"软件 {summary.SoftwareCount} 款 · 方案 {summary.SchemeCount} 个 · 分类 {summary.CategoryCount} 个",
+            $"资源原始合计：{BundleOverview.FormatBytes(summary.SourceBytes)}（按各软件解包累计，含重复引用）",
+            $"EXE 未压缩参考：{BundleOverview.FormatBytes(summary.OutputReferenceBytes)}（含执行器；实际大小由压缩和内容去重决定）",
+            $"生成时输出磁盘建议预留：至少 {BundleOverview.FormatBytes(summary.BuildFreeBytes)}（含中间文件）",
+            $"目标电脑临时空间预留：至少 {BundleOverview.FormatBytes(summary.TargetTempBytes)}（按全部软件解包，不含安装后的占用）",
+            "", "需要联网：" + Names(summary.NetworkSoftware), "将打开安装界面：" + Names(summary.InteractiveSoftware),
+            "目录需在安装界面选择：" + Names(summary.DirectorySelectionSoftware), "",
+            "优先自动安装的软件仍可能需要确认窗口；以上提示不保证全程无人操作。",
+            "适用于 Windows x64，内置运行时；单文件上限约 3.4 GiB。",
+            summary.OutputReferenceBytes > BundleBuilder.MaxBundleBytes ? "未压缩参考已超单文件上限；压缩后仍可能可用，实际生成时再次检查容量。" : "实际生成时将再次检查文件、磁盘空间与最终容量。"
+        });
+        overviewText.SelectionStart = 0; overviewText.SelectionLength = 0;
+        UpdateOutputSpace();
+    }
+
+    private void UpdateOutputSpace()
+    {
+        if (overview == null || string.IsNullOrWhiteSpace(output.Text)) { outputSpace.Text = "选择输出位置后显示磁盘空间。"; outputSpace.ForeColor = SystemColors.ControlText; return; }
+        try
+        {
+            var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(output.Text))!);
+            long available = drive.AvailableFreeSpace;
+            bool sufficient = available >= overview.BuildFreeBytes;
+            outputSpace.Text = $"输出磁盘 {drive.Name} 可用 {BundleOverview.FormatBytes(available)} · 建议预留至少 {BundleOverview.FormatBytes(overview.BuildFreeBytes)}。\n" +
+                (sufficient ? "空间检查通过；生成时会再次检查。" : "输出磁盘空间不足，请选择其他位置或释放空间。");
+            outputSpace.ForeColor = sufficient ? Color.DarkGreen : Color.Firebrick;
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        { outputSpace.Text = "暂时无法读取输出磁盘空间，生成时会再次检查。"; outputSpace.ForeColor = SystemColors.ControlText; }
     }
 
     private async Task BuildAsync()

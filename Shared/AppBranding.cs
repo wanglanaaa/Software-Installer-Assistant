@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
 namespace SoftwareInstaller;
@@ -11,7 +12,12 @@ internal static class AppBranding
         using var source = new Icon(stream, new Size(32, 32));
         return (Icon)source.Clone();
     });
-    private static readonly Lazy<Bitmap> image = new(() => icon.Value.ToBitmap());
+    private static readonly Lazy<Bitmap> image = new(() =>
+    {
+        using var stream = typeof(AppBranding).Assembly.GetManifestResourceStream("SoftwareInstaller.AppLogo.png")!;
+        using var source = System.Drawing.Image.FromStream(stream);
+        return new Bitmap(source);
+    });
 
     public static Image Image => image.Value;
 
@@ -19,5 +25,23 @@ internal static class AppBranding
     {
         form.Icon = icon.Value;
         form.ShowIcon = true;
+    }
+}
+
+internal sealed class BrandLogo : PictureBox
+{
+    public BrandLogo()
+    {
+        Image = AppBranding.Image;
+        SizeMode = PictureBoxSizeMode.Zoom;
+        TabStop = false;
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        e.Graphics.CompositingQuality = CompositingQuality.HighQuality;
+        base.OnPaint(e);
     }
 }
