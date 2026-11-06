@@ -2,16 +2,21 @@ using System.Diagnostics;
 using System.Security.Principal;
 using SoftwareInstaller.Packaging;
 using SoftwareInstaller.Models;
+using SoftwareInstaller.Utils;
 
 namespace SoftwareInstaller.Runner;
 
 public sealed class InstallForm : Form
 {
     private readonly ComboBox schemes = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly ComboBox categories = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ComboBox categories = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList, Margin = new(0) };
+    private readonly CheckBox selectCategory = new() { AutoSize = true, AutoCheck = false, ThreeState = true, Anchor = AnchorStyles.Left, Enabled = false,
+        Margin = new(0, 0, 8, 0), AccessibleName = "全选或取消选择当前范围内的软件" };
+    private readonly ToolTip selectionTips = new();
     private readonly Dictionary<string, ListViewItem> rows = new();
     private readonly HashSet<string> selectedIds = new();
     private bool updatingSelection;
+    private readonly ImageList softwareIcons = new() { ColorDepth = ColorDepth.Depth32Bit, ImageSize = new(20, 20) };
     private readonly ListView list = new() { Dock = DockStyle.Fill, CheckBoxes = true, View = View.Details, FullRowSelect = true, HideSelection = false, ShowItemToolTips = true };
     private readonly Label status = new() { Dock = DockStyle.Bottom, Height = 56, Padding = new(8), Text = "正在校验安装包，请稍候…" };
     private readonly Label heading = new() { Dock = DockStyle.Top, Height = 80, Padding = new(12), Text = "软件安装包" };
@@ -34,6 +39,9 @@ public sealed class InstallForm : Form
         this.packagePath = Path.GetFullPath(packagePath);
         this.startupSelection = startupSelection;
         Text = "软件合集安装"; Size = new(920, 650); MinimumSize = new(760, 500); StartPosition = FormStartPosition.CenterScreen;
+        list.SmallImageList = softwareIcons;
+        _ = softwareIcons.Handle;
+        list.Disposed += (_, _) => { softwareIcons.Dispose(); selectionTips.Dispose(); };
         list.Columns.Add("软件", 170); list.Columns.Add("版本", 70); list.Columns.Add("状态", 110); list.Columns.Add("说明", 270);
         list.Columns.Add("分类", 100); list.Columns.Add("默认安装位置", 190);
         list.Resize += (_, _) =>
@@ -41,19 +49,38 @@ public sealed class InstallForm : Form
             int[] widths = [150, 60, 120, Math.Max(120, list.ClientSize.Width - 625), 80, 190];
             for (int i = 0; i < widths.Length; i++) list.Columns[i].Width = widths[i];
         };
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, Padding = new(12), FlowDirection = FlowDirection.RightToLeft };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Margin = new(0), WrapContents = false, FlowDirection = FlowDirection.RightToLeft };
         buttons.Controls.Add(install); buttons.Controls.Add(cancel); buttons.Controls.Add(retry); buttons.Controls.Add(logs);
+        var footer = new TableLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, ColumnCount = 2, RowCount = 1, Padding = new(12) };
+        footer.ColumnStyles.Add(new(SizeType.Percent, 100));
+        footer.ColumnStyles.Add(new(SizeType.AutoSize));
+        footer.Controls.Add(new Label { Text = AppBranding.AuthorCredit, ForeColor = SystemColors.GrayText, AutoEllipsis = true, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+        footer.Controls.Add(buttons, 1, 0);
         var header = new Panel { Dock = DockStyle.Top, Height = heading.Height };
         heading.Dock = DockStyle.Fill;
         header.Controls.Add(heading);
         header.Controls.Add(new BrandLogo { Dock = DockStyle.Left, Width = 80, Padding = new(8), AccessibleName = "软件安装助理标识" });
-        Controls.Add(list); Controls.Add(categories); Controls.Add(schemes); Controls.Add(header); Controls.Add(status); Controls.Add(progress); Controls.Add(buttons);
+        var categoryBar = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Height = 36, ColumnCount = 2, RowCount = 1, Padding = new(8, 4, 8, 4) };
+        categoryBar.RowStyles.Add(new(SizeType.AutoSize));
+        categoryBar.ColumnStyles.Add(new(SizeType.AutoSize));
+        categoryBar.ColumnStyles.Add(new(SizeType.Percent, 100));
+        categoryBar.Controls.Add(selectCategory, 0, 0); categoryBar.Controls.Add(categories, 1, 0);
+        Controls.Add(list); Controls.Add(categoryBar); Controls.Add(schemes); Controls.Add(header); Controls.Add(status); Controls.Add(progress); Controls.Add(footer);
         schemes.SelectedIndexChanged += (_, _) => ApplyScheme();
         categories.SelectedIndexChanged += (_, _) => RenderList();
+        selectCategory.Click += (_, _) =>
+        {
+            if (package == null || running || uncertain) return;
+            bool select = selectCategory.CheckState != CheckState.Checked;
+            foreach (ListViewItem row in list.Items)
+                if (select) selectedIds.Add((string)row.Tag!); else selectedIds.Remove((string)row.Tag!);
+            RenderList();
+        };
         list.ItemChecked += (_, e) =>
         {
             if (updatingSelection) return;
             if (e.Item.Checked) selectedIds.Add((string)e.Item.Tag!); else selectedIds.Remove((string)e.Item.Tag!);
+            UpdateCategorySelection();
         };
         install.Click += async (_, _) => await BeginInstallAsync();
         cancel.Click += (_, _) => { cancellation?.Cancel(); cancel.Enabled = false; status.Text = "将停止后续任务；当前安装会等待结束。"; };
@@ -82,7 +109,9 @@ public sealed class InstallForm : Form
             if (online > 0) heading.Text += $" · {online} 款需要联网";
             foreach (var item in InstallationEngine.Sort(package.Manifest.Software))
             {
-                var row = new ListViewItem(item.Name) { Tag = item.Id, ToolTipText = item.Name };
+                using var icon = SoftwareIcons.FromPng(item.IconPng);
+                softwareIcons.Images.Add(icon);
+                var row = new ListViewItem(item.Name) { Tag = item.Id, ToolTipText = item.Name, ImageIndex = softwareIcons.Images.Count - 1 };
                 row.SubItems.Add(item.Version); row.SubItems.Add("待安装");
                 row.SubItems.Add(string.Join("；", new[] { item.StartInteractively ? "将打开安装界面" : "", item.RequiresNetwork ? "需要联网" : "" }.Where(s => s.Length > 0))); row.SubItems.Add(item.Category);
                 row.SubItems.Add(string.IsNullOrWhiteSpace(item.DefaultInstallDirectory) ? "跟随安装器默认" : item.DefaultInstallDirectory +
@@ -142,6 +171,16 @@ public sealed class InstallForm : Form
             }
         }
         finally { list.EndUpdate(); updatingSelection = false; }
+        UpdateCategorySelection();
+    }
+
+    private void UpdateCategorySelection()
+    {
+        int total = list.Items.Count;
+        int selected = list.Items.Cast<ListViewItem>().Count(row => selectedIds.Contains((string)row.Tag!));
+        selectCategory.CheckState = selected == 0 ? CheckState.Unchecked : selected == total ? CheckState.Checked : CheckState.Indeterminate;
+        selectCategory.Enabled = package != null && !running && !uncertain && total > 0;
+        selectionTips.SetToolTip(selectCategory, selected == total && total > 0 ? "取消选择当前范围内的全部软件" : "选中当前范围内的全部软件");
     }
 
     private static bool IsAdministrator() => new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
@@ -164,7 +203,7 @@ public sealed class InstallForm : Form
             catch (Exception ex) { status.Text = "未能取得管理员权限：" + ex.Message; }
             return;
         }
-        running = true; install.Enabled = retry.Enabled = schemes.Enabled = categories.Enabled = list.Enabled = false; cancel.Enabled = true;
+        running = true; install.Enabled = retry.Enabled = schemes.Enabled = categories.Enabled = selectCategory.Enabled = list.Enabled = false; cancel.Enabled = true;
         results = new(); progress.Value = 0;
         cancellation = new();
         var work = Path.Combine(Path.GetTempPath(), "SIA-install-" + Guid.NewGuid().ToString("N"));
@@ -221,6 +260,7 @@ public sealed class InstallForm : Form
             }
             running = false; cancellation.Dispose(); cancellation = null; cancel.Enabled = false;
             install.Enabled = schemes.Enabled = categories.Enabled = list.Enabled = !uncertain;
+            UpdateCategorySelection();
             retry.Enabled = !uncertain && results.Any(r => r.State == InstallState.Failed);
         }
     }

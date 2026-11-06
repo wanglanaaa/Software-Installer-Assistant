@@ -25,6 +25,7 @@ namespace SoftwareInstaller.UI
         private readonly Button projectButton = new() { Text = "更新版本" };
         private readonly Label selectionSummary = new() { AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
         private readonly BrandLogo cornerLogo = new() { AccessibleName = "软件安装助理标识" };
+        private readonly Label authorCredit = new() { Text = AppBranding.AuthorCredit, ForeColor = SystemColors.GrayText, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleRight };
         private const int ConfigurationBarHeight = 64;
         private const int PageMargin = 20, SidebarWidth = 200, ColumnGap = 12, ButtonHeight = 32, ButtonWidth = 96, ButtonGap = 8;
         private readonly Label configurationPathLabel = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
@@ -59,6 +60,7 @@ namespace SoftwareInstaller.UI
 
         private void InitializeCustomComponents()
         {
+            Controls.Add(authorCredit);
             installPathTextBox = new TextBox { Size = new System.Drawing.Size(150, 23), Text = DefaultInstallPath };
             browseButton = new Button { Text = "安装路径", Size = new System.Drawing.Size(80, 25) };
             manualInstallButton = new Button { Text = "手动安装" };
@@ -140,6 +142,8 @@ namespace SoftwareInstaller.UI
             softwareListView.SetBounds(listLeft, top + 34, listWidth, Math.Max(120, bottom - top - 34 - ButtonHeight - ButtonGap));
             softwareMoveUp.SetBounds(listLeft, bottom - ButtonHeight, ButtonWidth, ButtonHeight);
             softwareMoveDown.SetBounds(listLeft + ButtonWidth + ButtonGap, bottom - ButtonHeight, ButtonWidth, ButtonHeight);
+            int creditLeft = listLeft + 2 * (ButtonWidth + ButtonGap);
+            authorCredit.SetBounds(creditLeft, bottom - ButtonHeight, Math.Max(0, listWidth - 2 * (ButtonWidth + ButtonGap)), ButtonHeight);
             if (softwareListView.Columns.Count == 6)
             {
                 int[] widths = [48, 144, 64, 72, Math.Max(110, listWidth - 440), 88];
@@ -324,7 +328,8 @@ namespace SoftwareInstaller.UI
                 {
                     if (categoryNodes.TryGetValue(item.Category, out var categoryNode))
                     {
-                        TreeNode softwareNode = new TreeNode(item.Name) { Tag = item, Checked = item.IsSelected };
+                        int icon = GetSoftwareIcon(item.FilePath);
+                        TreeNode softwareNode = new TreeNode(item.Name) { Tag = item, Checked = item.IsSelected, ImageIndex = icon, SelectedImageIndex = icon };
                         categoryNode.Nodes.Add(softwareNode);
                     }
                 }
@@ -342,6 +347,7 @@ namespace SoftwareInstaller.UI
                         : selectedCategory != null && n.Tag is not SoftwareItem && n.Text == selectedCategory);
                 UpdateSoftwareListView();
                 UpdateOrderingButtons();
+                UpdateImportAvailability();
             }
             finally { isUpdatingByCode = previousUpdating; }
         }
@@ -405,7 +411,7 @@ namespace SoftwareInstaller.UI
                     if (category != null && !item.Category.Equals(category, StringComparison.OrdinalIgnoreCase)) continue;
                     if (query.Length > 0 && !new[] { item.Name, item.Version, item.Description, item.Category }
                         .Any(value => value?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)) continue;
-                    var row = new ListViewItem((index++).ToString()) { Tag = item, Checked = item.IsSelected };
+                    var row = new ListViewItem((index++).ToString()) { Tag = item, Checked = item.IsSelected, ImageIndex = GetSoftwareIcon(item.FilePath) };
                     row.SubItems.AddRange([item.Name, item.Version, item.Size, item.Description, item.Category]);
                     softwareListView.Items.Add(row);
                     row.Selected = selectedIds.Contains(item.Id);
@@ -445,6 +451,7 @@ namespace SoftwareInstaller.UI
                             {
                                 _softwareManager.AddCategory(categoryName);
                                 RebuildTreeView();
+                                categoryTreeView.SelectedNode = categoryTreeView.Nodes[0].Nodes.Cast<TreeNode>().First(n => n.Text == categoryName);
                             }
                             catch (Exception ex) { ErrorHandler.ShowError("保存分类失败：" + ex.Message); }
                         }
@@ -475,6 +482,7 @@ namespace SoftwareInstaller.UI
 
         private async void AddSoftwareButton_Click(object? sender, EventArgs e)
         {
+            if (ImportCategory() == null) return;
             using var dialog = new OpenFileDialog { Filter = "安装文件 (*.exe;*.msi)|*.exe;*.msi", Title = "选择一个或多个软件安装包", Multiselect = true };
             if (dialog.ShowDialog(this) == DialogResult.OK) await ImportSoftwareAsync(dialog.FileNames);
         }

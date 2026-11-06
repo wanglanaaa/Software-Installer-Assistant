@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SoftwareInstaller.Models/SoftwareInstaller.Models.csproj" />
+    <ProjectReference Include="../SoftwareInstaller.Utils/SoftwareInstaller.Utils.csproj" />
   </ItemGroup>
 </Project>

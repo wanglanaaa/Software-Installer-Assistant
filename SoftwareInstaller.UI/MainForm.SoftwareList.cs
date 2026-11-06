@@ -17,9 +17,11 @@ public partial class MainForm
 
     private void InitializeSoftwareList()
     {
+        InitializeSoftwareIcons();
         Controls.Add(softwareSearch); Controls.Add(softwareCategory);
         softwareListView.CheckBoxes = true; softwareListView.HideSelection = false;
         softwareListView.Columns.Add("分类", 88);
+        categoryTreeView.AfterSelect += (_, _) => UpdateImportAvailability();
         softwareSearch.TextChanged += (_, _) => UpdateSoftwareListView();
         softwareCategory.SelectedIndexChanged += (_, _) => UpdateSoftwareListView();
         softwareListView.ItemChecked += (_, e) =>
@@ -50,13 +52,13 @@ public partial class MainForm
         foreach (var control in new Control[] { this, softwareListView, categoryTreeView })
         {
             control.AllowDrop = true;
-            control.DragEnter += (_, e) => e.Effect = !preparingImport && e.Data?.GetDataPresent(DataFormats.FileDrop) == true ? DragDropEffects.Copy : DragDropEffects.None;
+            control.DragEnter += (_, e) => e.Effect = !preparingImport && ImportCategory() != null && e.Data?.GetDataPresent(DataFormats.FileDrop) == true ? DragDropEffects.Copy : DragDropEffects.None;
             control.DragDrop += async (_, e) =>
             {
                 if (e.Data?.GetData(DataFormats.FileDrop) is string[] files) await ImportSoftwareAsync(files);
             };
         }
-        configurationTips.SetToolTip(addSoftwareButton, "可多选安装文件，也可以将 EXE / MSI 拖入窗口");
+        UpdateImportAvailability();
     }
 
     private void RefreshSoftwareCategories()
@@ -86,21 +88,36 @@ public partial class MainForm
         _softwareManager?.AddCategory(item.Category); RebuildTreeView();
     }
 
-    private string ImportCategory() => categoryTreeView.SelectedNode?.Tag is SoftwareItem item ? item.Category
-        : categoryTreeView.SelectedNode?.Parent != null ? categoryTreeView.SelectedNode.Text : "未分类";
+    private string? ImportCategory()
+    {
+        var node = categoryTreeView.SelectedNode;
+        string? category = node?.Tag is SoftwareItem item ? item.Category : node?.Parent != null ? node.Text : null;
+        return category != null && _softwareManager?.ActiveCategories.Contains(category, StringComparer.OrdinalIgnoreCase) == true ? category : null;
+    }
+
+    private void UpdateImportAvailability()
+    {
+        addSoftwareButton.Enabled = !preparingImport && ImportCategory() != null;
+        configurationTips.SetToolTip(addSoftwareButton, _softwareManager?.ActiveCategories.Count > 0
+            ? ImportCategory() == null ? "请先在左侧选中分类，再添加或拖入软件" : $"添加软件到「{ImportCategory()}」，支持多选或拖入 EXE / MSI"
+            : "请先新建分类，再在分类下添加软件");
+    }
 
     private async Task ImportSoftwareAsync(IEnumerable<string> files)
     {
         if (preparingImport || _softwareManager == null) return;
+        string? category = ImportCategory();
+        if (category == null) return;
         preparingImport = true; addSoftwareButton.Enabled = false;
         try
         {
             int revision = configurationRevision;
             var paths = files.ToArray(); var existing = _softwareManager.ActiveSoftwareItems.Select(s => s.Clone()).ToList();
-            string category = ImportCategory();
             var preparation = await Task.Run(() => SoftwareImport.Prepare(paths, existing, category));
             if (IsDisposed || Disposing) return;
             if (revision != configurationRevision) { MessageBox.Show(this, "配置已切换，请在当前配置中重新添加软件。"); return; }
+            if (!_softwareManager.ActiveCategories.Contains(category, StringComparer.OrdinalIgnoreCase))
+            { MessageBox.Show(this, "原分类已删除，请先选择分类再添加软件。"); return; }
             List<SoftwareItem> additions = new();
             if (preparation.Items.Count == 1 && paths.Length == 1)
             {
@@ -112,12 +129,14 @@ public partial class MainForm
                 using var batch = new BatchImportForm(preparation, _softwareManager.ActiveCategories);
                 if (batch.ShowDialog(this) == DialogResult.OK) additions = batch.Software;
             }
+            if (additions.Any(item => !_softwareManager.ActiveCategories.Contains(item.Category, StringComparer.OrdinalIgnoreCase)))
+            { MessageBox.Show(this, "请先在主界面新建分类，再添加软件。"); return; }
             foreach (var item in additions) _softwareManager.AddSoftwareToActiveList(item);
             if (additions.Count > 0) { softwareSearch.Clear(); softwareCategory.SelectedIndex = 0; RebuildTreeView(); }
             if (preparation.Errors.Count > 0 || preparation.Items.Count == 0)
                 MessageBox.Show(this, $"添加 {additions.Count} 款，跳过 {preparation.Duplicates} 个重复文件。\n" + string.Join("\n", preparation.Errors), "添加软件", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex) { ErrorHandler.ShowError("添加软件失败：" + ex.Message); }
-        finally { preparingImport = false; if (!IsDisposed) addSoftwareButton.Enabled = true; }
+        finally { preparingImport = false; if (!IsDisposed) UpdateImportAvailability(); }
     }
 }

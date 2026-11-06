@@ -48,6 +48,11 @@ internal static partial class Program
             runner = Path.GetFullPath("artifacts/runner/SoftwareInstaller.Runner.exe");
             Directory.CreateDirectory(root);
             UserDataPaths.DataDirectoryOverride = Path.Combine(root, "user-data");
+            if (args.Contains("--software-icons-only"))
+            {
+                TestSoftwareIcons();
+                Console.WriteLine($"PASS: {passed} software icon checks. Preview: {root}"); return 0;
+            }
             if (args.Contains("--overview-only"))
             {
                 TestBundleOverview();

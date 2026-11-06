@@ -8,7 +8,7 @@ public partial class SoftwareEditForm : Form
     public SoftwareItem SoftwareItem { get; private set; }
     private readonly TextBox resources = new(), installDirectory = new(), directoryParameter = new();
     private readonly ComboBox directoryMode = new() { DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly ComboBox category = new() { DropDownStyle = ComboBoxStyle.DropDown };
+    private readonly ComboBox category = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox network = new() { Text = "此安装包需要联网", AutoSize = true };
     private readonly NumericUpDown order = new() { Minimum = 0, Maximum = 10000 };
     private readonly Label directoryHint = new() { Dock = DockStyle.Fill, AutoSize = false };
@@ -67,7 +67,7 @@ public partial class SoftwareEditForm : Form
         directoryNotes.Controls.Add(directoryHint, 0, 2);
 
         Row(0, "软件名", nameTextBox, "默认填入安装文件名（不含扩展名），可按习惯修改。");
-        Row(1, "分类", category, "选择已有分类，也可以直接输入新分类名。");
+        Row(1, "分类", category, "选择已有分类；新增分类请先回主界面创建。");
         Row(2, "版本", versionTextBox, "可留空。选择文件时会尽量读取版本信息。");
         Row(3, "说明", descriptionTextBox, "可选，写下软件用途或安装时需要留意的事。");
         Row(4, "安装文件", filePathTextBox, "", browseButton, installerHint);

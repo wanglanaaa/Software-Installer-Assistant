@@ -19,8 +19,9 @@ public sealed class BatchImportForm : Form
         var help = new Label { Dock = DockStyle.Top, Height = 58, Padding = new(16, 12, 16, 4),
             Text = $"已读取 {drafts.Count} 个安装文件，跳过 {preparation.Duplicates} 个重复文件。\n可修改名称、分类和版本；添加后双击软件，可继续设置安装目录、静默参数及关联资源。" };
         var categoryBar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 44, Padding = new(16, 4, 16, 4), WrapContents = false };
-        var category = new ComboBox { Width = 200, DropDownStyle = ComboBoxStyle.DropDown };
-        category.Items.AddRange(CategoryNames.Normalize(categories.Concat(drafts.Select(s => s.Category))).Cast<object>().ToArray());
+        var categoryNames = CategoryNames.Normalize(categories);
+        var category = new ComboBox { Width = 200, DropDownStyle = ComboBoxStyle.DropDownList };
+        category.Items.AddRange(categoryNames.Cast<object>().ToArray());
         category.Text = drafts[0].Category;
         var apply = new Button { Text = "统一分类", Size = new(96, 28) };
         apply.Click += (_, _) => { grid.EndEdit(); foreach (var item in drafts.Where(s => s.IsSelected)) item.Category = string.IsNullOrWhiteSpace(category.Text) ? "未分类" : category.Text.Trim(); grid.Refresh(); };
@@ -28,7 +29,10 @@ public sealed class BatchImportForm : Form
         grid.Columns.Add(new DataGridViewCheckBoxColumn { DataPropertyName = nameof(SoftwareItem.IsSelected), HeaderText = "添加", Width = 52 });
         void Column(string property, string title, int width, bool readOnly = false) => grid.Columns.Add(new DataGridViewTextBoxColumn
             { DataPropertyName = property, HeaderText = title, Width = width, ReadOnly = readOnly, SortMode = DataGridViewColumnSortMode.NotSortable });
-        Column(nameof(SoftwareItem.Name), "软件名", 190); Column(nameof(SoftwareItem.Category), "分类", 110); Column(nameof(SoftwareItem.Version), "版本", 100);
+        Column(nameof(SoftwareItem.Name), "软件名", 190);
+        grid.Columns.Add(new DataGridViewComboBoxColumn { DataPropertyName = nameof(SoftwareItem.Category), HeaderText = "分类", Width = 110,
+            DataSource = categoryNames, SortMode = DataGridViewColumnSortMode.NotSortable });
+        Column(nameof(SoftwareItem.Version), "版本", 100);
         Column(nameof(SoftwareItem.Size), "大小", 90, true); Column(nameof(SoftwareItem.FilePath), "安装文件", 320, true);
         grid.DataSource = drafts;
         grid.CurrentCellDirtyStateChanged += (_, _) => { if (grid.IsCurrentCellDirty) grid.CommitEdit(DataGridViewDataErrorContexts.Commit); };

@@ -28,7 +28,7 @@ partial class MainForm
     /// </summary>
     private void InitializeComponent()
     {
-            this.categoryTreeView = new System.Windows.Forms.TreeView();
+            this.categoryTreeView = new SoftwareTreeView();
             this.softwareListView = new System.Windows.Forms.ListView();
             this.columnHeader1 = new System.Windows.Forms.ColumnHeader();
             this.columnHeader2 = new System.Windows.Forms.ColumnHeader();

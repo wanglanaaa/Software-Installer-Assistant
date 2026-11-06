@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using SoftwareInstaller.Models;
+using SoftwareInstaller.Utils;
 
 namespace SoftwareInstaller.Packaging;
 
@@ -109,6 +110,7 @@ public static class BundleBuilder
             var installer = string.IsNullOrWhiteSpace(item.ResourceDirectory) ? Path.GetFileName(source) :
                 Path.GetRelativePath(Path.GetFullPath(item.ResourceDirectory), source).Replace('\\', '/');
             var description = Describe(item);
+            description.IconPng = SoftwareIcons.ReadPng(source);
             description.Installer = installer;
             manifest.Software.Add(description);
             sources.Add(item.Id, files);

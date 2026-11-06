@@ -6,6 +6,8 @@ namespace SoftwareInstaller;
 
 internal static class AppBranding
 {
+    public const string AuthorCredit = "本软件由 GitHub 用户 wanglanaaa 制作";
+
     private static readonly Lazy<Icon> icon = new(() =>
     {
         using var stream = typeof(AppBranding).Assembly.GetManifestResourceStream("SoftwareInstaller.AppIcon.ico")!;

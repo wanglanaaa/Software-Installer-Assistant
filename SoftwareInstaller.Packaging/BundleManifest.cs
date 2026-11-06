@@ -18,6 +18,7 @@ public sealed class BundleSoftware
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public string Version { get; set; } = "";
+    public byte[]? IconPng { get; set; }
     public string Category { get; set; } = "";
     public string Installer { get; set; } = "";
     public string Arguments { get; set; } = "";
