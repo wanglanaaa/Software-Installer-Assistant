@@ -1,8 +1,8 @@
 # 软件安装助理 (Software Installer Assistant)
 
-当前版本：**v1.2.2**。下载完整的 [Windows x64 便携包](https://github.com/wanglanaaa/Software-Installer-Assistant/releases/tag/v1.2.2)，解压后运行 `软件安装助理.exe`；请保留 `Runner` 子目录及其他文件。
+当前版本：**v1.2.3**。下载完整的 [Windows x64 便携包](https://github.com/wanglanaaa/Software-Installer-Assistant/releases/tag/v1.2.3)，解压后运行 `软件安装助理.exe`；请保留 `Runner` 子目录及其他文件。
 
-![v1.2.2 主界面](Mainform.png)
+![v1.2.3 主界面](Mainform.png)
 
 截图使用示例配置展示最新版界面；发布包不附带示例或第三方软件安装文件。
 
@@ -29,6 +29,7 @@
 *   **安装路径与状态**：支持默认安装目录，不能自动设置时提示在安装界面选择；安装时显示当前阶段、已处理数量及逐项结果。
 *   **界面与图标**：软件名称前显示安装文件图标，生成合集时一并内嵌，缺失图标使用默认图标；分类名称前不预留图标空位。主界面及合集界面显示制作者 GitHub 信息，生成前检查执行器版本，避免误用旧模板。
 *   **合集分类勾选**：分类筛选旁使用复选框控制当前范围，支持全选、取消全选和半选状态；逐项勾选时同步更新，保留其他分类的选择。
+*   **合集运行与停止**：按依赖顺序逐项检查、解包和安装，显示实际解包字节进度；全选与切换方案保留高亮行及滚动位置，复用安装顺序与软件索引。停止菜单支持等待当前安装结束、停止等待并退出，以及终止受管理的 EXE 安装器及子进程；中断后保留可能仍在使用的资源。启动和解包不再做 SHA-256 内容校验，仍保留基础格式、长度和路径检查。已有合集需重新生成。
 
 ## 界面预览
 
@@ -48,7 +49,7 @@
 
 下面截图来自实际导出的 EXE，打开后选择方案并点击「一键安装」。联网和需要手动操作的项目会标注；不支持静默方式时打开软件原有安装界面。
 
-![v1.2.2 单文件安装包界面](docs/images/exported-installer.png)
+![v1.2.3 单文件安装包界面](docs/images/exported-installer.png)
 
 ## 🛠️ 技术栈
 
@@ -74,7 +75,7 @@
 ### 方式一：为普通用户 (推荐)
 
 1.  前往本项目的 [**Releases 页面**](https://github.com/wanglanaaa/Software-Installer-Assistant/releases)。
-2.  下载 `SoftwareInstaller-Assistant-v1.2.2-win-x64.zip`。
+2.  下载 `SoftwareInstaller-Assistant-v1.2.3-win-x64.zip`。
 3.  将压缩包解压到你希望的任意位置。
 4.  进入解压后的文件夹，双击运行 `软件安装助理.exe`。
 

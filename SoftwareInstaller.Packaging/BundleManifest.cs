@@ -48,4 +48,4 @@ public sealed class BundleFile
     public long Size { get; set; }
 }
 
-public sealed record BundleProgress(string Message, int Completed, int Total);
+public sealed record BundleProgress(string Message, int Completed, int Total, long BytesCompleted = 0, long TotalBytes = 0);

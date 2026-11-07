@@ -8,7 +8,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        // Diagnostic mode verifies and extracts resources without starting any installers.
+        // Diagnostic mode checks the package structure and extracts resources without starting installers.
         if ((args.Length == 2 || args.Length == 4 && args[2] == "--preview") && args[0] == "--verify-package")
         {
             var work = Path.Combine(Path.GetTempPath(), "SIA-verify-" + Guid.NewGuid().ToString("N"));

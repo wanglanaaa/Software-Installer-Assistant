@@ -1,5 +1,6 @@
+using System.Buffers;
+using System.Diagnostics;
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using SoftwareInstaller.Models;
@@ -14,10 +15,11 @@ public sealed class BundleReader : IDisposable
     private readonly SliceStream slice;
     private readonly ZipArchive archive;
     public BundleManifest Manifest { get; }
+    public InstallationPlan Plan { get; }
 
-    private BundleReader(FileStream file, SliceStream slice, ZipArchive archive, BundleManifest manifest)
+    private BundleReader(FileStream file, SliceStream slice, ZipArchive archive, BundleManifest manifest, InstallationPlan plan)
     {
-        this.file = file; this.slice = slice; this.archive = archive; Manifest = manifest;
+        this.file = file; this.slice = slice; this.archive = archive; Manifest = manifest; Plan = plan;
     }
 
     public static async Task<BundleReader> OpenAsync(string path, CancellationToken token = default)
@@ -36,28 +38,25 @@ public sealed class BundleReader : IDisposable
             if (length <= 0 || length > file.Length - FooterSize || file.Length > BundleBuilder.MaxBundleBytes)
                 throw new InvalidDataException("安装包长度无效。");
             slice = new SliceStream(file, file.Length - FooterSize - length, length);
-            var hash = await SHA256.HashDataAsync(slice, token);
-            if (!CryptographicOperations.FixedTimeEquals(hash, footer.AsSpan(8, 32)))
-                throw new InvalidDataException("安装包校验失败，文件可能损坏，请重新复制或生成。");
-            slice.Position = 0;
+            // Keep the legacy digest field in the footer format, but do not scan the payload.
             archive = new ZipArchive(slice, ZipArchiveMode.Read, true);
             var metadata = archive.GetEntry("manifest.json") ?? throw new InvalidDataException("缺少资源清单。");
             if (metadata.Length > 4 * 1024 * 1024) throw new InvalidDataException("资源清单过大。");
             await using var input = metadata.Open();
             var manifest = await JsonSerializer.DeserializeAsync<BundleManifest>(input, cancellationToken: token)
                 ?? throw new InvalidDataException("资源清单无效。");
-            ValidateManifest(manifest, true);
+            var plan = ValidateManifest(manifest, true);
             foreach (var resource in manifest.Software.SelectMany(s => s.Files))
             {
                 var entry = archive.GetEntry("content/" + resource.Sha256);
                 if (entry == null || entry.Length != resource.Size) throw new InvalidDataException("资源缺失或长度不符。");
             }
-            return new(file, slice, archive, manifest);
+            return new(file, slice, archive, manifest, plan);
         }
         catch { archive?.Dispose(); slice?.Dispose(); await file.DisposeAsync(); throw; }
     }
 
-    public static void ValidateManifest(BundleManifest manifest, bool requireFiles = false)
+    public static InstallationPlan ValidateManifest(BundleManifest manifest, bool requireFiles = false)
     {
         if (manifest.FormatVersion != 1 || string.IsNullOrWhiteSpace(manifest.Name) || manifest.Software.Count == 0)
             throw new InvalidDataException("不支持的安装包格式或空清单。");
@@ -83,7 +82,7 @@ public sealed class BundleReader : IDisposable
                     throw new InvalidDataException("资源路径重复或校验值无效。");
             }
         }
-        InstallationEngine.Sort(manifest.Software);
+        return InstallationPlan.Create(manifest.Software);
     }
 
     public async Task ExtractAsync(IEnumerable<BundleSoftware> software, string destination, IProgress<BundleProgress>? progress = null, CancellationToken token = default)
@@ -95,27 +94,45 @@ public sealed class BundleReader : IDisposable
         if (new DriveInfo(Path.GetPathRoot(Path.GetFullPath(destination))!).AvailableFreeSpace < required + 100L * 1024 * 1024)
             throw new IOException("临时磁盘空间不足，请清理空间后重试。");
         int completed = 0, total = items.Sum(s => s.Files.Count);
-        foreach (var item in items)
+        long copied = 0, nextUpdate = 0;
+        var clock = Stopwatch.StartNew();
+        void Report(string message, bool force = false)
         {
-            var root = PackagePaths.Resolve(destination, item.Id);
-            Directory.CreateDirectory(root);
-            foreach (var resource in item.Files)
-            {
-                token.ThrowIfCancellationRequested();
-                progress?.Report(new($"正在解包：{item.Name} / {resource.Path}", completed, total));
-                var target = PackagePaths.Resolve(root, resource.Path);
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                // Destination is a newly created, private random directory. Never overwrite existing files.
-                await using var output = new FileStream(target, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 131072, true);
-                await using var input = archive.GetEntry("content/" + resource.Sha256)!.Open();
-                await input.CopyToAsync(output, token);
-                output.Position = 0;
-                var hash = Convert.ToHexString(await SHA256.HashDataAsync(output, token));
-                if (!hash.Equals(resource.Sha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException($"{item.Name} 的资源校验失败。");
-                completed++;
-            }
+            if (progress == null || !force && clock.ElapsedMilliseconds < nextUpdate) return;
+            nextUpdate = clock.ElapsedMilliseconds + 100;
+            progress.Report(new(message, completed, total, copied, required));
         }
-        progress?.Report(new("资源已准备就绪", total, total));
+        var buffer = ArrayPool<byte>.Shared.Rent(131072);
+        try
+        {
+            foreach (var item in items)
+            {
+                var root = PackagePaths.Resolve(destination, item.Id);
+                Directory.CreateDirectory(root);
+                foreach (var resource in item.Files)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var message = $"正在解包：{item.Name} / {resource.Path}";
+                    Report(message);
+                    var target = PackagePaths.Resolve(root, resource.Path);
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    // Destination is a newly created, private random directory. Never overwrite existing files.
+                    await using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 131072, true);
+                    await using var input = archive.GetEntry("content/" + resource.Sha256)!.Open();
+                    int read;
+                    while ((read = await input.ReadAsync(buffer.AsMemory(0, 131072), token)) > 0)
+                    {
+                        await output.WriteAsync(buffer.AsMemory(0, read), token);
+                        copied += read;
+                        Report(message);
+                    }
+                    if (output.Length != resource.Size) throw new InvalidDataException($"{item.Name} 的资源长度不符。");
+                    completed++;
+                }
+            }
+            Report("资源已准备就绪", force: true);
+        }
+        finally { ArrayPool<byte>.Shared.Return(buffer); }
     }
 
     public void Dispose() { archive.Dispose(); slice.Dispose(); file.Dispose(); }

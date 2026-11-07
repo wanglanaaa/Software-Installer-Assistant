@@ -22,6 +22,7 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 4 && args[0] == "--process-fixture") return RunProcessFixture(args);
         if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FallbackFixture.exe", StringComparison.OrdinalIgnoreCase))
         {
             var ledger = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "scenario.txt"));
@@ -48,6 +49,22 @@ internal static partial class Program
             runner = Path.GetFullPath("artifacts/runner/SoftwareInstaller.Runner.exe");
             Directory.CreateDirectory(root);
             UserDataPaths.DataDirectoryOverride = Path.Combine(root, "user-data");
+            if (args.Contains("--runner-performance-only"))
+            {
+                TestRunnerPerformanceAsync().GetAwaiter().GetResult();
+                RenderRunnerPerformancePreview();
+                Console.WriteLine($"PASS: {passed} runner performance checks. Preview: {root}"); return 0;
+            }
+            if (args.Contains("--process-control-only"))
+            {
+                TestProcessControlAsync().GetAwaiter().GetResult();
+                Console.WriteLine($"PASS: {passed} process control checks. Artifacts: {root}"); return 0;
+            }
+            if (args.Contains("--bundle-reading-only"))
+            {
+                TestBundleReadingAsync().GetAwaiter().GetResult();
+                Console.WriteLine($"PASS: {passed} bundle reading checks. Artifacts: {root}"); return 0;
+            }
             if (args.Contains("--software-icons-only"))
             {
                 TestSoftwareIcons();
@@ -234,6 +251,8 @@ internal static partial class Program
 
     private static async Task RunAsync()
     {
+        await TestBundleReadingAsync();
+        await TestProcessControlAsync();
         Assert(File.Exists(runner), "published self-contained runner exists");
         fixture = Path.Combine(root, "source files"); Directory.CreateDirectory(fixture);
         foreach (var file in Directory.EnumerateFiles(AppContext.BaseDirectory).Where(p => !p.EndsWith(".pdb")))
@@ -287,8 +306,8 @@ internal static partial class Program
             Assert(process.ExitCode == 0 && File.ReadAllText(report).Contains("\"success\":true"), "generated self-contained EXE starts and validates/extracts own payload");
         }
         var corrupt = Path.Combine(root, "corrupt.exe"); File.Copy(output, corrupt);
-        using (var file = new FileStream(corrupt, FileMode.Open, FileAccess.ReadWrite)) { file.Position = file.Length - BundleReader.FooterSize - 10; int value = file.ReadByte(); file.Position--; file.WriteByte((byte)(value ^ 1)); }
-        await Reject(async () => { using var _ = await BundleReader.OpenAsync(corrupt); }, "modified payload rejected");
+        using (var file = new FileStream(corrupt, FileMode.Open, FileAccess.ReadWrite)) { file.Position = file.Length - 1; file.WriteByte(0); }
+        await Reject(async () => { using var _ = await BundleReader.OpenAsync(corrupt); }, "invalid package footer rejected");
         var oldHash = SHA256.HashData(File.ReadAllBytes(output));
         using (var cancelled = new CancellationTokenSource())
         {

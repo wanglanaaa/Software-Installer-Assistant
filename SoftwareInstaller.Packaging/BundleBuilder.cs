@@ -116,7 +116,6 @@ public static class BundleBuilder
             sources.Add(item.Id, files);
         }
         BundleReader.ValidateManifest(manifest);
-        InstallationEngine.Sort(manifest.Software); // Reject missing dependencies and cycles before writing anything.
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         var staging = Path.Combine(Path.GetDirectoryName(output)!, $".sia-{Guid.NewGuid():N}.tmp");
         var archivePath = staging + ".zip";
