@@ -21,11 +21,7 @@ public sealed class InstallForm : Form
     private readonly Label status = new() { Dock = DockStyle.Bottom, Height = 56, Padding = new(8), Text = "正在读取安装清单，请稍候…" };
     private readonly Label heading = new() { Dock = DockStyle.Top, Height = 80, Padding = new(12), Text = "软件安装包" };
     private readonly ProgressBar progress = new() { Dock = DockStyle.Bottom, Height = 16 };
-    private readonly Button install = new() { Text = "一键安装", AutoSize = true, Enabled = false }, cancel = new() { Text = "停止…", AutoSize = true, Enabled = false }, retry = new() { Text = "重试失败项", AutoSize = true, Enabled = false }, logs = new() { Text = "查看日志", AutoSize = true, Enabled = false };
-    private readonly ContextMenuStrip stopMenu = new();
-    private readonly ToolStripMenuItem stopQueue = new("停止后续任务（等待当前安装结束）");
-    private readonly ToolStripMenuItem stopWaiting = new("停止等待并退出（保留当前安装器）");
-    private readonly ToolStripMenuItem terminate = new("终止当前安装器及其子进程") { Enabled = false, ToolTipText = "仅支持可管理的 EXE 安装器；MSI 或无法管理的进程可选择停止等待并退出。" };
+    private readonly Button install = new() { Text = "一键安装", AutoSize = true, Enabled = false }, cancel = new() { Text = "取消安装", AutoSize = true, Enabled = false }, retry = new() { Text = "重试失败项", AutoSize = true, Enabled = false }, logs = new() { Text = "查看日志", AutoSize = true, Enabled = false };
     private BundleReader? package;
     private CancellationTokenSource? cancellation;
     private InstallationControl? installationControl;
@@ -88,20 +84,7 @@ public sealed class InstallForm : Form
             UpdateCategorySelection();
         };
         install.Click += async (_, _) => await BeginInstallAsync();
-        stopMenu.Items.AddRange([stopQueue, stopWaiting, terminate]);
-        cancel.Click += (_, _) => stopMenu.Show(cancel, new Point(0, cancel.Height));
-        stopQueue.Click += (_, _) => { cancellation?.Cancel(); stopQueue.Enabled = false; status.Text = "将停止后续任务；当前安装会等待结束。"; };
-        stopWaiting.Click += (_, _) => StopWaitingAndExit();
-        terminate.Click += (_, _) =>
-        {
-            if (!running || !terminate.Enabled) return;
-            var currentControl = installationControl;
-            cancellation?.Cancel(); stopQueue.Enabled = false;
-            if (MessageBox.Show(this, "后续任务已停止。是否终止当前安装器及其受管理的子进程？可能留下未完成的安装，需要之后手动检查或修复。", "终止安装", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
-            if (!running || !ReferenceEquals(currentControl, installationControl) || !terminate.Enabled) return;
-            cancellation?.Cancel(); installationControl?.TerminateCurrent(); cancel.Enabled = false;
-            status.Text = "正在终止当前安装器，资源将保留供检查。";
-        };
+        cancel.Click += (_, _) => CancelInstallation();
         retry.Click += async (_, _) =>
         {
             var ids = results.Where(r => r.State == InstallState.Failed).Select(r => r.Id).ToHashSet();
@@ -114,18 +97,17 @@ public sealed class InstallForm : Form
         {
             if (!running) return;
             e.Cancel = true;
-            if (!closeAfterRun && MessageBox.Show(this, "停止等待并退出？后续任务将取消，当前安装器可能继续运行，所需资源和日志会保留。", "退出安装界面", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                StopWaitingAndExit();
+            closeAfterRun = true;
+            CancelInstallation();
         };
-        FormClosed += (_, _) => { loading.Cancel(); package?.Dispose(); cancellation?.Dispose(); installationControl?.Dispose(); stopMenu.Dispose(); };
+        FormClosed += (_, _) => { loading.Cancel(); package?.Dispose(); cancellation?.Dispose(); installationControl?.Dispose(); };
     }
 
-    private void StopWaitingAndExit()
+    private void CancelInstallation()
     {
-        if (!running) { Close(); return; }
-        closeAfterRun = true;
-        cancellation?.Cancel(); installationControl?.StopWaiting(); cancel.Enabled = false;
-        status.Text = "正在停止等待并保存日志，请稍候…";
+        if (!running) return;
+        cancellation?.Cancel(); cancel.Enabled = false;
+        status.Text = "正在取消当前安装并停止后续任务，请稍候…";
     }
 
     private async Task LoadPackageAsync()
@@ -259,7 +241,7 @@ public sealed class InstallForm : Form
         {
             try
             {
-                Process.Start(new ProcessStartInfo(packagePath, "--install " + string.Join(',', items.Select(s => s.Id))) { UseShellExecute = true, Verb = "runas" });
+                Process.Start(new ProcessStartInfo(packagePath, "--install " + string.Join(",", items.Select(s => s.Id))) { UseShellExecute = true, Verb = "runas" });
                 Close();
             }
             catch (Exception ex) { status.Text = "未能取得管理员权限：" + ex.Message; }
@@ -268,9 +250,9 @@ public sealed class InstallForm : Form
         running = true; install.Enabled = retry.Enabled = schemes.Enabled = categories.Enabled = selectCategory.Enabled = list.Enabled = false; cancel.Enabled = true;
         results = new(); progress.Value = 0;
         cancellation = new();
-        installationControl = new(); stopQueue.Enabled = true; terminate.Enabled = false;
+        installationControl = new();
         var work = Path.Combine(Path.GetTempPath(), "SIA-install-" + Guid.NewGuid().ToString("N"));
-        logDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoftwareInstaller", "Logs", DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8]);
+        logDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoftwareInstaller", "Logs", DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N").Substring(0, 8));
         try
         {
             Directory.CreateDirectory(logDirectory); logs.Enabled = true;
@@ -280,11 +262,10 @@ public sealed class InstallForm : Form
             {
                 status.Text = $"正在解包当前软件 {p.Completed}/{p.Total} · {p.Message}";
                 progress.Style = ProgressBarStyle.Blocks;
-                progress.Value = p.TotalBytes > 0 ? (int)Math.Clamp(p.BytesCompleted * 100 / p.TotalBytes, 0, 100) : p.Total == 0 ? 0 : p.Completed * 100 / p.Total;
+                progress.Value = p.TotalBytes > 0 ? (int)Math.Max(0, Math.Min(100, p.BytesCompleted * 100 / p.TotalBytes)) : p.Total == 0 ? 0 : p.Completed * 100 / p.Total;
             });
             var reporter = new Progress<InstallUpdate>(p =>
             {
-                terminate.Enabled = p.Result == null && p.CanTerminate;
                 status.Text = $"已处理 {p.Completed}/{p.Total} 款 · {p.StateText} · {p.Message}";
                 progress.Style = p.Result == null && p.Phase != InstallPhase.Preparing ? ProgressBarStyle.Marquee : ProgressBarStyle.Blocks;
                 if (p.Phase == InstallPhase.Preparing) progress.Value = 0;
@@ -294,7 +275,7 @@ public sealed class InstallForm : Form
                 row.SubItems[3].Text = p.Message;
             });
             results = await Task.Run(() => InstallationEngine.RunAsync(plan, work, logDirectory, reporter, cancellation.Token, control: installationControl,
-                prepareInstaller: (item, token) => package.ExtractAsync([item], work, extraction, token)));
+                prepareInstaller: (item, token) => package.ExtractAsync([item], work, extraction, token), cancelCurrent: true));
             uncertain = results.Any(r => r.State == InstallState.Uncertain || r.ExitCode == 1641);
             var finished = results.Select(r => r.Id).ToHashSet();
             foreach (ListViewItem row in rows.Values)
@@ -309,7 +290,7 @@ public sealed class InstallForm : Form
             // Preserve files if an unexpected failure occurs after an installer may have started.
             retained.Add(work); uncertain = true;
             status.Text = "安装流程已停止：" + ex.Message;
-            try { await File.WriteAllTextAsync(Path.Combine(logDirectory, "error.log"), ex.ToString()); }
+            try { await RunnerRuntime.WriteTextAsync(Path.Combine(logDirectory, "error.log"), ex.ToString()); }
             catch (Exception logError) when (logError is IOException or UnauthorizedAccessException) { status.Text += " 日志无法写入。"; }
         }
         finally
@@ -324,13 +305,12 @@ public sealed class InstallForm : Form
             }
             if (retained.Count > 0)
             {
-                try { await File.WriteAllLinesAsync(Path.Combine(logDirectory, "retained-resources.txt"), retained); }
+                try { await RunnerRuntime.WriteTextAsync(Path.Combine(logDirectory, "retained-resources.txt"), string.Join(Environment.NewLine, retained)); }
                 catch (Exception logError) when (logError is IOException or UnauthorizedAccessException) { status.Text += " 资源目录：" + work; }
                 status.Text += " 保留目录见日志。";
             }
             running = false; cancellation.Dispose(); cancellation = null; cancel.Enabled = false;
-            installationControl.Dispose(); installationControl = null; terminate.Enabled = false;
-            stopMenu.Close();
+            installationControl.Dispose(); installationControl = null;
             install.Enabled = schemes.Enabled = categories.Enabled = list.Enabled = !uncertain;
             UpdateCategorySelection();
             retry.Enabled = !uncertain && results.Any(r => r.State == InstallState.Failed);

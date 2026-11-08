@@ -129,6 +129,13 @@ internal static partial class Program
             using var bitmap = new Bitmap(form.Width, form.Height);
             form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size)); bitmap.Save(Path.Combine(root, "preview-runner-" + name + ".png"));
         }
+        using var closingCancellation = new CancellationTokenSource();
+        typeof(InstallForm).GetField("running", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, true);
+        typeof(InstallForm).GetField("cancellation", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, closingCancellation);
+        form.Close();
+        Assert(closingCancellation.IsCancellationRequested && !form.IsDisposed,
+            "closing the runner cancels installation and keeps the form alive until managed processes finish");
+        typeof(InstallForm).GetField("running", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, false);
         form.Close();
     }
 }

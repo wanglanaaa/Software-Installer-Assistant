@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using SoftwareInstaller.Models;
 
 namespace SoftwareInstaller.Packaging;
@@ -51,7 +50,7 @@ public static class InstallationEngine
         if (!string.IsNullOrWhiteSpace(item.MsiProductCode) && MsiQueryProductState("{" + Guid.Parse(item.MsiProductCode).ToString().ToUpperInvariant() + "}") != 5) return false;
         if (!string.IsNullOrWhiteSpace(item.DetectionFile))
         {
-            var path = InstallDirectoryOptions.ExpandDetectionPath(item.DetectionFile, item.DefaultInstallDirectory);
+            var path = InstallDirectoryOptions.ExpandDetectionPath(item.DetectionFile!, item.DefaultInstallDirectory);
             if (!File.Exists(path)) return false;
             if (!string.IsNullOrWhiteSpace(item.DetectionVersion))
             {
@@ -82,17 +81,17 @@ public static class InstallationEngine
     public static Task<List<InstallResult>> RunAsync(IEnumerable<BundleSoftware> software, string workDirectory, string logDirectory,
         IProgress<InstallUpdate>? progress = null, CancellationToken token = default,
         Func<BundleSoftware, string>? resolveInstaller = null, bool requestElevation = false, InstallationControl? control = null,
-        Func<BundleSoftware, CancellationToken, Task>? prepareInstaller = null)
-        => RunAsync(InstallationPlan.Create(software), workDirectory, logDirectory, progress, token, resolveInstaller, requestElevation, control, prepareInstaller);
+        Func<BundleSoftware, CancellationToken, Task>? prepareInstaller = null, bool cancelCurrent = false)
+        => RunAsync(InstallationPlan.Create(software), workDirectory, logDirectory, progress, token, resolveInstaller, requestElevation, control, prepareInstaller, cancelCurrent);
 
     public static async Task<List<InstallResult>> RunAsync(InstallationPlan plan, string workDirectory, string logDirectory,
         IProgress<InstallUpdate>? progress = null, CancellationToken token = default,
         Func<BundleSoftware, string>? resolveInstaller = null, bool requestElevation = false, InstallationControl? control = null,
-        Func<BundleSoftware, CancellationToken, Task>? prepareInstaller = null)
+        Func<BundleSoftware, CancellationToken, Task>? prepareInstaller = null, bool cancelCurrent = false)
     {
         var items = plan.Items; Directory.CreateDirectory(logDirectory); var results = new List<InstallResult>();
         var resultsById = new Dictionary<string, InstallResult>(StringComparer.Ordinal);
-        await File.WriteAllTextAsync(Path.Combine(logDirectory, "session.log"), $"开始：{DateTimeOffset.Now:O}{Environment.NewLine}");
+        await RunnerRuntime.WriteTextAsync(Path.Combine(logDirectory, "session.log"), $"开始：{DateTimeOffset.Now:O}{Environment.NewLine}");
         foreach (var item in items)
         {
             if (token.IsCancellationRequested || control?.Token.IsCancellationRequested == true) break;
@@ -104,13 +103,13 @@ public static class InstallationEngine
             results.Add(result);
             resultsById.Add(result.Id, result);
             await LogAsync($"{result.Name}: {result.State} {result.Message}");
-            await File.WriteAllTextAsync(Path.Combine(logDirectory, "results.json"), JsonSerializer.Serialize(results, BundleBuilder.JsonOptions));
+            await RunnerRuntime.WriteTextAsync(Path.Combine(logDirectory, "results.json"), RunnerRuntime.Json(results));
             progress?.Report(new(item.Id, result.Message, results.Count, items.Count, result));
             if (result.State is InstallState.Uncertain or InstallState.Cancelled || result.ExitCode == 1641) break;
         }
         return results;
 
-        Task LogAsync(string message) => File.AppendAllTextAsync(Path.Combine(logDirectory, "session.log"), $"{DateTimeOffset.Now:O} {message}{Environment.NewLine}");
+        Task LogAsync(string message) => RunnerRuntime.WriteTextAsync(Path.Combine(logDirectory, "session.log"), $"{DateTimeOffset.Now:O} {message}{Environment.NewLine}", append: true);
 
         async Task<InstallResult> InstallOneAsync(BundleSoftware item, int completed, int total)
         {
@@ -144,28 +143,37 @@ public static class InstallationEngine
                     var info = CreateStartInfo(item, installer, logDirectory, interactive, fallback, requestElevation);
                     if (token.IsCancellationRequested || control?.Token.IsCancellationRequested == true)
                         return new(item.Id, item.Name, InstallState.Cancelled, "已取消，未启动安装器。");
-                    using var session = InstallerProcess.Start(info, trackChildren: !item.IsMsi && !requestElevation);
+                    using var session = InstallerProcess.Start(info, trackChildren: !requestElevation && (!item.IsMsi || cancelCurrent), killOnClose: cancelCurrent);
                     var process = session.Process;
                     started = true;
                     await LogAsync($"{item.Name} PID={process.Id}；安装器={installer}；子进程管理={session.CanTerminate}；资源目录={workDirectory}");
                     if (session.TrackingWarning != null) await LogAsync(session.TrackingWarning);
                     progress?.Report(new(item.Id, message, completed, total, Phase: interactive ? InstallPhase.WaitingForUser : InstallPhase.Installing, CanTerminate: session.CanTerminate));
                     using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(item.TimeoutMinutes));
-                    using var waiting = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, control?.Token ?? CancellationToken.None);
+                    using var waiting = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, control?.Token ?? CancellationToken.None, cancelCurrent ? token : CancellationToken.None);
                     try { await session.WaitAsync(waiting.Token); }
                     catch (OperationCanceledException)
                     {
                         string stopped = "等待超时，安装器可能仍在运行。";
-                        if (control?.TerminationRequested == true)
+                        if (control?.TerminationRequested == true || cancelCurrent && (token.IsCancellationRequested || control?.Token.IsCancellationRequested == true || timeout.IsCancellationRequested))
                         {
-                            try { await session.TerminateAsync(); stopped = "已终止当前安装器及其受管理的子进程，安装结果需人工检查。"; }
+                            try
+                            {
+                                await session.TerminateAsync();
+                                stopped = timeout.IsCancellationRequested ? "等待超时，已终止当前安装器及其受管理的子进程。" : "已取消当前安装器及其受管理的子进程。";
+                                if (cancelCurrent && !item.IsMsi && !timeout.IsCancellationRequested)
+                                    return new(item.Id, item.Name, InstallState.Cancelled, stopped + " 后续任务已停止。");
+                                if (item.IsMsi) stopped += " Windows Installer 服务可能仍在回滚，请等待其完成。";
+                            }
                             catch (Exception ex) { stopped = "未能确认安装器全部终止：" + ex.Message; }
                         }
                         else if (control?.Token.IsCancellationRequested == true) stopped = "已停止等待，当前安装器可能继续运行。";
                         return new(item.Id, item.Name, InstallState.Uncertain, stopped + " 队列已停止，资源暂时保留。");
                     }
-                    if (control?.Token.IsCancellationRequested == true)
-                        return new(item.Id, item.Name, InstallState.Uncertain, "已停止等待，安装结果待人工检查，资源暂时保留。");
+                    if ((cancelCurrent && token.IsCancellationRequested) || control?.Token.IsCancellationRequested == true)
+                        return cancelCurrent
+                            ? new(item.Id, item.Name, InstallState.Cancelled, "已取消，受管理的安装进程已退出，后续任务已停止。")
+                            : new(item.Id, item.Name, InstallState.Uncertain, "已停止等待，安装结果待人工检查，资源暂时保留。");
                     if (session.TrackingWarning != null)
                         return new(item.Id, item.Name, InstallState.Uncertain, session.TrackingWarning + "；主进程已退出，子进程状态待确认，资源暂时保留。", process.ExitCode);
                     int code = process.ExitCode;
@@ -183,7 +191,8 @@ public static class InstallationEngine
                     {
                         progress?.Report(new(item.Id, $"正在验证 {item.Name} 的安装结果", completed, total, Phase: InstallPhase.Verifying));
                         bool installed = IsInstalled(item);
-                        for (int retry = 0; retry < 10 && !installed; retry++) { await Task.Delay(1000, control?.Token ?? CancellationToken.None); installed = IsInstalled(item); }
+                        using var verifying = CancellationTokenSource.CreateLinkedTokenSource(token, control?.Token ?? CancellationToken.None);
+                        for (int retry = 0; retry < 10 && !installed; retry++) { await Task.Delay(1000, verifying.Token); installed = IsInstalled(item); }
                         if (!installed) return new(item.Id, item.Name, InstallState.Uncertain, "安装器已退出但检测未通过，队列已暂停，请检查软件是否安装完成。", code);
                     }
                     string done = fallback ? "已切换普通安装并完成。" : interactive ? "普通安装已完成。" : "自动安装已完成。";

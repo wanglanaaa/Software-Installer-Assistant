@@ -18,7 +18,7 @@ internal sealed class InstallerProcess : IDisposable
         Process = process; this.job = job; TrackingWarning = warning;
     }
 
-    public static InstallerProcess Start(ProcessStartInfo info, bool trackChildren)
+    public static InstallerProcess Start(ProcessStartInfo info, bool trackChildren, bool killOnClose = false)
     {
         if (!trackChildren || info.UseShellExecute)
             return new(Process.Start(info) ?? throw new IOException("无法启动安装程序。"));
@@ -36,14 +36,21 @@ internal sealed class InstallerProcess : IDisposable
         {
             process = Process.GetProcessById((int)native.ProcessId);
             _ = process.SafeHandle; // Retain a handle before a short-lived launcher can exit.
-            string? warning = null;
             job = CreateJobObject(IntPtr.Zero, null);
+            string? warning = null;
             if (job.IsInvalid || !AssignProcessToJobObject(job, native.Process))
             {
+                if (killOnClose) throw new Win32Exception(Marshal.GetLastWin32Error(), "无法建立安装进程管理，已阻止启动。");
                 warning = "无法管理安装子进程：" + new Win32Exception(Marshal.GetLastWin32Error()).Message;
                 job.Dispose(); job = null;
             }
-            // Do not use KILL_ON_JOB_CLOSE: stopping the wait must leave the installer running.
+            if (killOnClose)
+            {
+                var limits = new JobLimits();
+                limits.Basic.Flags = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, supported since Windows XP.
+                if (!SetInformationJobObject(job!, 9, ref limits, Marshal.SizeOf<JobLimits>()))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
             if (ResumeThread(native.Thread) == uint.MaxValue) throw new Win32Exception(Marshal.GetLastWin32Error());
             return new(process, job, warning);
         }
@@ -58,7 +65,8 @@ internal sealed class InstallerProcess : IDisposable
 
     public async Task WaitAsync(CancellationToken token)
     {
-        await Process.WaitForExitAsync(token);
+        // Avoid WaitForExitAsync, which requires modern .NET. Polling does no process enumeration.
+        while (!Process.HasExited) await Task.Delay(100, token).ConfigureAwait(false);
         if (job == null) return;
         while (true)
         {
@@ -103,6 +111,25 @@ internal sealed class InstallerProcess : IDisposable
         public uint PageFaultCount, TotalProcesses, ActiveProcesses, TerminatedProcesses;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BasicLimits
+    {
+        public long ProcessTime, JobTime;
+        public uint Flags;
+        public UIntPtr MinimumWorkingSet, MaximumWorkingSet;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass, SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobLimits
+    {
+        public BasicLimits Basic;
+        public ulong ReadOperations, WriteOperations, OtherOperations, ReadBytes, WriteBytes, OtherBytes;
+        public UIntPtr ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemory, PeakJobMemory;
+    }
+
     [DllImport("kernel32.dll", EntryPoint = "CreateProcessW", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CreateProcess(string applicationName, StringBuilder commandLine, IntPtr processAttributes,
@@ -113,6 +140,9 @@ internal sealed class InstallerProcess : IDisposable
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AssignProcessToJobObject(SafeFileHandle job, IntPtr process);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetInformationJobObject(SafeFileHandle job, int infoClass, ref JobLimits information, int size);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern uint ResumeThread(IntPtr thread);
     [DllImport("kernel32.dll", SetLastError = true)]

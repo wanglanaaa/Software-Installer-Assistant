@@ -20,7 +20,7 @@ public sealed class BundleBuildRequest
 public static class BundleBuilder
 {
     // Leave headroom below the Windows executable file size boundary.
-    public const long MaxBundleBytes = 3500L * 1024 * 1024;
+    public const long MaxBundleBytes = RunnerRuntime.MaxBundleBytes;
     public static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public static List<int> ParseCodes(string value)
@@ -143,7 +143,8 @@ public static class BundleBuilder
                     if (hashes.Add(hash))
                     {
                         input.Position = 0;
-                        await using var entry = archive.CreateEntry("content/" + hash, CompressionLevel.Fastest).Open();
+                        // Installers are usually already compressed. Store bytes directly to reduce CPU on old PCs.
+                        await using var entry = archive.CreateEntry("content/" + hash, CompressionLevel.NoCompression).Open();
                         await input.CopyToAsync(entry, token);
                     }
                     completed++;

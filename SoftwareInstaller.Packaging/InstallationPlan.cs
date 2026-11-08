@@ -17,8 +17,9 @@ public sealed class InstallationPlan
     {
         var selected = selectedIds.ToHashSet(StringComparer.Ordinal);
         var pending = new Stack<string>(selected);
-        while (pending.TryPop(out var id))
+        while (pending.Count > 0)
         {
+            var id = pending.Pop();
             if (!byId.TryGetValue(id, out var item)) throw new InvalidDataException("选择了未知的软件。");
             foreach (var dependency in item.DependencyIds)
                 if (selected.Add(dependency)) pending.Push(dependency);

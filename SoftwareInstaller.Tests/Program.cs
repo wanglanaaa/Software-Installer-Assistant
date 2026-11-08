@@ -49,6 +49,16 @@ internal static partial class Program
             runner = Path.GetFullPath("artifacts/runner/SoftwareInstaller.Runner.exe");
             Directory.CreateDirectory(root);
             UserDataPaths.DataDirectoryOverride = Path.Combine(root, "user-data");
+            if (args.Length == 2 && args[0] == "--runner-packaging-only")
+            {
+                TestRunnerPackagingAsync(Path.GetFullPath(args[1])).GetAwaiter().GetResult();
+                Console.WriteLine($"PASS: {passed} runner packaging checks. Artifacts: {root}"); return 0;
+            }
+            if (args.Length == 3 && args[0] == "--runner-startup-only")
+            {
+                MeasureRunnerStartupAsync(Path.GetFullPath(args[1]), Path.GetFullPath(args[2])).GetAwaiter().GetResult();
+                Console.WriteLine($"PASS: {passed} startup checks. Artifacts: {root}"); return 0;
+            }
             if (args.Contains("--runner-performance-only"))
             {
                 TestRunnerPerformanceAsync().GetAwaiter().GetResult();

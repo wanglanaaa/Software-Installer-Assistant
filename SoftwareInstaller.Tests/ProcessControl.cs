@@ -32,8 +32,8 @@ internal static partial class Program
             Arguments = $"--process-fixture {mode} {milliseconds} \"{marker}\""
         };
         Task<List<InstallResult>> Run(BundleSoftware[] items, string name, InstallationControl? control = null,
-            CancellationToken token = default, IProgress<InstallUpdate>? progress = null) => InstallationEngine.RunAsync(items, root,
-                Path.Combine(root, name), progress, token, resolveInstaller: _ => Environment.ProcessPath!, control: control);
+            CancellationToken token = default, IProgress<InstallUpdate>? progress = null, bool cancelCurrent = false) => InstallationEngine.RunAsync(items, root,
+                Path.Combine(root, name), progress, token, resolveInstaller: _ => Environment.ProcessPath!, control: control, cancelCurrent: cancelCurrent);
         async Task<int> ReadPid(string path)
         {
             var watch = Stopwatch.StartNew();
@@ -86,6 +86,23 @@ internal static partial class Program
             Assert(result.Single().State == InstallState.Succeeded && child.HasExited, "installation completes after all managed child processes exit");
         }
         finally { await Cleanup(marker); }
+
+        marker = Path.Combine(root, "cancel-managed-tree.pid");
+        using (var stop = new CancellationTokenSource())
+        {
+            try
+            {
+                var task = Run([Item("exit-parent", 30000, marker), Item("sleep", 100, marker + ".next")],
+                    "logs-cancel-managed-tree", token: stop.Token, cancelCurrent: true);
+                using var child = Process.GetProcessById(await ReadPid(marker));
+                _ = child.SafeHandle;
+                stop.Cancel();
+                var result = await task.WaitAsync(TimeSpan.FromSeconds(8));
+                Assert(result.Single().State == InstallState.Cancelled && child.HasExited && !File.Exists(marker + ".next"),
+                    "runner cancellation kills children even after their launcher exits and never starts the next item");
+            }
+            finally { await Cleanup(marker); }
+        }
 
         foreach (bool force in new[] { false, true })
         {

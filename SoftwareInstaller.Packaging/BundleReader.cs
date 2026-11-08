@@ -1,8 +1,7 @@
-using System.Buffers;
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using SoftwareInstaller.Models;
 
 namespace SoftwareInstaller.Packaging;
@@ -32,31 +31,34 @@ public sealed class BundleReader : IDisposable
             if (file.Length < FooterSize) throw new InvalidDataException("文件不包含安装资源。");
             file.Position = file.Length - FooterSize;
             var footer = new byte[FooterSize];
-            await file.ReadExactlyAsync(footer, token);
-            if (!footer.AsSpan(40).SequenceEqual(Magic)) throw new InvalidDataException("未找到安装包资源，请使用生成的 EXE。");
+            int offset = 0;
+            while (offset < footer.Length)
+            {
+                int read = await file.ReadAsync(footer, offset, footer.Length - offset, token).ConfigureAwait(false);
+                if (read == 0) throw new EndOfStreamException("安装包尾部不完整。");
+                offset += read;
+            }
+            if (!footer.Skip(40).SequenceEqual(Magic)) throw new InvalidDataException("未找到安装包资源，请使用生成的 EXE。");
             var length = BitConverter.ToInt64(footer, 0);
-            if (length <= 0 || length > file.Length - FooterSize || file.Length > BundleBuilder.MaxBundleBytes)
+            if (length <= 0 || length > file.Length - FooterSize || file.Length > RunnerRuntime.MaxBundleBytes)
                 throw new InvalidDataException("安装包长度无效。");
             slice = new SliceStream(file, file.Length - FooterSize - length, length);
             // Keep the legacy digest field in the footer format, but do not scan the payload.
             archive = new ZipArchive(slice, ZipArchiveMode.Read, true);
             var metadata = archive.GetEntry("manifest.json") ?? throw new InvalidDataException("缺少资源清单。");
             if (metadata.Length > 4 * 1024 * 1024) throw new InvalidDataException("资源清单过大。");
-            await using var input = metadata.Open();
-            var manifest = await JsonSerializer.DeserializeAsync<BundleManifest>(input, cancellationToken: token)
+            using var input = metadata.Open();
+            token.ThrowIfCancellationRequested();
+            var manifest = RunnerRuntime.ReadJson<BundleManifest>(input)
                 ?? throw new InvalidDataException("资源清单无效。");
-            var plan = ValidateManifest(manifest, true);
-            foreach (var resource in manifest.Software.SelectMany(s => s.Files))
-            {
-                var entry = archive.GetEntry("content/" + resource.Sha256);
-                if (entry == null || entry.Length != resource.Size) throw new InvalidDataException("资源缺失或长度不符。");
-            }
+            // Startup only needs software/selection metadata. Validate resources when selected for extraction.
+            var plan = ValidateManifest(manifest, validateResources: false);
             return new(file, slice, archive, manifest, plan);
         }
-        catch { archive?.Dispose(); slice?.Dispose(); await file.DisposeAsync(); throw; }
+        catch { archive?.Dispose(); slice?.Dispose(); file.Dispose(); throw; }
     }
 
-    public static InstallationPlan ValidateManifest(BundleManifest manifest, bool requireFiles = false)
+    public static InstallationPlan ValidateManifest(BundleManifest manifest, bool requireFiles = false, bool validateResources = true)
     {
         if (manifest.FormatVersion != 1 || string.IsNullOrWhiteSpace(manifest.Name) || manifest.Software.Count == 0)
             throw new InvalidDataException("不支持的安装包格式或空清单。");
@@ -72,22 +74,33 @@ public sealed class BundleReader : IDisposable
             if (item.TimeoutMinutes is < 1 or > 1440 || item.SuccessCodes.Count == 0 ||
                 (!item.Installer.EndsWith(item.IsMsi ? ".msi" : ".exe", StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidDataException("安装配置无效。");
-            if (requireFiles && !item.Files.Any(f => f.Path.Equals(item.Installer, StringComparison.OrdinalIgnoreCase)))
-                throw new InvalidDataException("安装文件未关联。");
-            var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var resource in item.Files)
-            {
-                PackagePaths.Resolve(Path.GetTempPath(), resource.Path);
-                if (!paths.Add(resource.Path) || resource.Size < 0 || resource.Sha256.Length != 64 || !resource.Sha256.All(Uri.IsHexDigit))
-                    throw new InvalidDataException("资源路径重复或校验值无效。");
-            }
+            if (validateResources) ValidateResources(item, requireFiles);
         }
         return InstallationPlan.Create(manifest.Software);
+    }
+
+    private static void ValidateResources(BundleSoftware item, bool requireFiles)
+    {
+        if (requireFiles && !item.Files.Any(f => f.Path.Equals(item.Installer, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidDataException("安装文件未关联。");
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var resource in item.Files)
+        {
+            PackagePaths.Resolve(Path.GetTempPath(), resource.Path);
+            if (!paths.Add(resource.Path) || resource.Size < 0 || resource.Sha256.Length != 64 || !resource.Sha256.All(Uri.IsHexDigit))
+                throw new InvalidDataException("资源路径重复或校验值无效。");
+        }
     }
 
     public async Task ExtractAsync(IEnumerable<BundleSoftware> software, string destination, IProgress<BundleProgress>? progress = null, CancellationToken token = default)
     {
         var items = software.ToList();
+        token.ThrowIfCancellationRequested();
+        foreach (var item in items)
+        {
+            if (!Manifest.Software.Contains(item)) throw new InvalidDataException("选择了未知的软件资源。");
+            ValidateResources(item, true);
+        }
         long required = items.SelectMany(s => s.Files).Sum(f => f.Size);
         Directory.CreateDirectory(destination);
         if (PackagePaths.IsReparsePoint(destination)) throw new InvalidDataException("工作目录不能是链接。");
@@ -102,37 +115,44 @@ public sealed class BundleReader : IDisposable
             nextUpdate = clock.ElapsedMilliseconds + 100;
             progress.Report(new(message, completed, total, copied, required));
         }
-        var buffer = ArrayPool<byte>.Shared.Rent(131072);
-        try
+        var buffer = new byte[131072];
+        foreach (var item in items)
         {
-            foreach (var item in items)
+            var root = PackagePaths.Resolve(destination, item.Id);
+            Directory.CreateDirectory(root);
+            foreach (var resource in item.Files)
             {
-                var root = PackagePaths.Resolve(destination, item.Id);
-                Directory.CreateDirectory(root);
-                foreach (var resource in item.Files)
+                token.ThrowIfCancellationRequested();
+                var message = $"正在解包：{item.Name} / {resource.Path}";
+                Report(message);
+                var target = PackagePaths.Resolve(root, resource.Path);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                // Destination is a newly created, private random directory. Never overwrite existing files.
+                var entry = archive.GetEntry("content/" + resource.Sha256);
+                if (entry == null || entry.Length != resource.Size) throw new InvalidDataException($"{item.Name} 的资源缺失或长度不符。");
+                using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 131072, true);
+                using var input = entry.Open();
+                using var hash = SHA256.Create();
+                long written = 0;
+                int read;
+                while ((read = await input.ReadAsync(buffer, 0, buffer.Length, token).ConfigureAwait(false)) > 0)
                 {
-                    token.ThrowIfCancellationRequested();
-                    var message = $"正在解包：{item.Name} / {resource.Path}";
+                    if (read > resource.Size - written) throw new InvalidDataException($"{item.Name} 的资源长度不符。");
+                    hash.TransformBlock(buffer, 0, read, null, 0);
+                    await output.WriteAsync(buffer, 0, read, token).ConfigureAwait(false);
+                    written += read;
+                    copied += read;
                     Report(message);
-                    var target = PackagePaths.Resolve(root, resource.Path);
-                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                    // Destination is a newly created, private random directory. Never overwrite existing files.
-                    await using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 131072, true);
-                    await using var input = archive.GetEntry("content/" + resource.Sha256)!.Open();
-                    int read;
-                    while ((read = await input.ReadAsync(buffer.AsMemory(0, 131072), token)) > 0)
-                    {
-                        await output.WriteAsync(buffer.AsMemory(0, read), token);
-                        copied += read;
-                        Report(message);
-                    }
-                    if (output.Length != resource.Size) throw new InvalidDataException($"{item.Name} 的资源长度不符。");
-                    completed++;
                 }
+                if (output.Length != resource.Size) throw new InvalidDataException($"{item.Name} 的资源长度不符。");
+                hash.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+                string digest = BitConverter.ToString(hash.Hash!).Replace("-", "");
+                if (!digest.Equals(resource.Sha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"{item.Name} 的资源已损坏，已阻止安装。请重新获取安装包。");
+                completed++;
             }
-            Report("资源已准备就绪", force: true);
         }
-        finally { ArrayPool<byte>.Shared.Return(buffer); }
+        Report("资源已准备就绪", force: true);
     }
 
     public void Dispose() { archive.Dispose(); slice.Dispose(); file.Dispose(); }
@@ -151,10 +171,10 @@ public sealed class BundleReader : IDisposable
             int read = source.Read(buffer, offsetInBuffer, (int)Math.Min(count, length - position));
             position += read; return read;
         }
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        public override async Task<int> ReadAsync(byte[] buffer, int offsetInBuffer, int count, CancellationToken cancellationToken)
         {
             source.Position = offset + position;
-            int read = await source.ReadAsync(buffer[..(int)Math.Min(buffer.Length, length - position)], cancellationToken);
+            int read = await source.ReadAsync(buffer, offsetInBuffer, (int)Math.Min(count, length - position), cancellationToken).ConfigureAwait(false);
             position += read; return read;
         }
         public override long Seek(long value, SeekOrigin origin)

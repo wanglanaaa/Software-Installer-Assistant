@@ -4,8 +4,8 @@ public static class PackagePaths
 {
     public static string Resolve(string root, string relative)
     {
-        if (string.IsNullOrWhiteSpace(relative) || relative.Contains('\\') || relative.Contains(':') ||
-            relative.Split('/').Any(s => s is "" or "." or ".." || s.EndsWith(' ') || s.EndsWith('.')) ||
+        if (string.IsNullOrWhiteSpace(relative) || relative.Contains("\\") || relative.Contains(":") ||
+            relative.Split('/').Any(s => s is "" or "." or ".." || s.EndsWith(" ", StringComparison.Ordinal) || s.EndsWith(".", StringComparison.Ordinal)) ||
             relative.IndexOfAny(['\0', '"', '<', '>', '|', '?', '*']) >= 0 || Path.IsPathRooted(relative))
             throw new InvalidDataException($"非法资源路径：{relative}");
         var path = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));

@@ -18,15 +18,15 @@ public static class InstallDirectoryOptions
 
     public static void Validate(string? value, InstallDirectoryMode mode, string? parameter, bool isMsi)
     {
-        if (!Enum.IsDefined(mode)) throw new InvalidDataException("安装目录参数类型无效。");
+        if (!Enum.IsDefined(typeof(InstallDirectoryMode), mode)) throw new InvalidDataException("安装目录参数类型无效。");
         var path = Normalize(value);
         if (path.Length == 0)
         {
             return;
         }
         if (mode == InstallDirectoryMode.InstallerDefault) throw new InvalidDataException("设置目录后，请选择安装器支持的目录参数类型。");
-        if (!Regex.IsMatch(path, @"^[A-Za-z]:\\") || path[3..].IndexOfAny(['\0', '\r', '\n', '"', '<', '>', '|', '?', '*', ':']) >= 0 ||
-            path.Split('\\').Skip(1).Any(p => p is "." or ".." || p.EndsWith(' ') || p.EndsWith('.')))
+        if (!Regex.IsMatch(path, @"^[A-Za-z]:\\") || path.Substring(3).IndexOfAny(['\0', '\r', '\n', '"', '<', '>', '|', '?', '*', ':']) >= 0 ||
+            path.Split('\\').Skip(1).Any(p => p is "." or ".." || p.EndsWith(" ", StringComparison.Ordinal) || p.EndsWith(".", StringComparison.Ordinal)))
             throw new InvalidDataException("安装目录须为本地磁盘绝对路径，例如 D:\\Apps\\软件名；输入 D: 按 D:\\ 处理。");
         if (isMsi && mode is InstallDirectoryMode.InnoSetup or InstallDirectoryMode.Nsis)
             throw new InvalidDataException("MSI 安装器请选择 MSI 属性或自定义参数。");
@@ -34,7 +34,7 @@ public static class InstallDirectoryOptions
             throw new InvalidDataException("MSI 属性模式只适用于 MSI 安装文件。");
         if (mode == InstallDirectoryMode.MsiProperty && !Regex.IsMatch(parameter ?? "", @"^[A-Z_][A-Z0-9_]*$"))
             throw new InvalidDataException("请填写厂商支持的 MSI 目录属性名，例如 INSTALLDIR；不同软件可能使用不同属性。");
-        if (mode == InstallDirectoryMode.Custom && (string.IsNullOrWhiteSpace(parameter) || !parameter.Contains(Placeholder) || parameter.IndexOfAny(['\0', '\r', '\n']) >= 0))
+        if (mode == InstallDirectoryMode.Custom && (string.IsNullOrWhiteSpace(parameter) || !parameter!.Contains(Placeholder) || parameter.IndexOfAny(['\0', '\r', '\n']) >= 0))
             throw new InvalidDataException("自定义目录参数必须包含 {InstallDir}，例如 --install-dir=\"{InstallDir}\"。");
     }
 
@@ -71,6 +71,7 @@ public static class InstallDirectoryOptions
         return string.IsNullOrWhiteSpace(args) ? extra : args + " " + extra;
     }
 
+#if !NETFRAMEWORK
     public static string BuildArguments(SoftwareItem item, string? arguments = null)
     {
         var profile = item.DirectoryMode == InstallDirectoryMode.Automatic && !string.IsNullOrWhiteSpace(item.DefaultInstallDirectory) ? InstallerInspector.Inspect(item.FilePath) : null;
@@ -78,6 +79,7 @@ public static class InstallDirectoryOptions
             profile?.DirectoryMode ?? item.DirectoryMode, profile?.DirectoryParameter ?? item.DirectoryParameter,
             string.Equals(Path.GetExtension(item.FilePath), ".msi", StringComparison.OrdinalIgnoreCase));
     }
+#endif
 
     public static void CheckTargetDrive(string? directory)
     {
