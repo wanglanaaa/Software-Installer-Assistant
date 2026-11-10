@@ -14,8 +14,9 @@ internal static partial class Program
             return 0;
         }
         File.WriteAllText(args[3] + ".parent", Environment.ProcessId.ToString());
-        using var child = Process.Start(new ProcessStartInfo(Environment.ProcessPath!, $"--process-fixture sleep {args[2]} \"{args[3]}\"") { UseShellExecute = false, CreateNoWindow = true })!;
-        if (args[1] != "exit-parent") child.WaitForExit();
+        string application = args[1] == "launch-installed" ? File.ReadAllText(args[3] + ".application") : Environment.ProcessPath!;
+        using var child = Process.Start(new ProcessStartInfo(application, $"--process-fixture sleep {args[2]} \"{args[3]}\"") { UseShellExecute = false, CreateNoWindow = true })!;
+        if (args[1] is not ("exit-parent" or "launch-installed")) child.WaitForExit();
         return 0;
     }
 

@@ -168,10 +168,10 @@ public sealed class BundleBuildForm : Form
             var descriptions = new List<BundleSoftware>();
             foreach (var item in prepared.Software)
             {
-                var errors = await Task.Run(() => BundleBuilder.CheckItem(item));
+                var errors = await Task.Run(() => BundleBuilder.CheckItem(item, useInstallerDefaults: true));
                 ready &= errors.Count == 0;
                 var row = checks.Items.Add(item.Name);
-                var description = errors.Count == 0 ? await Task.Run(() => BundleBuilder.Describe(item)) : null;
+                var description = errors.Count == 0 ? await Task.Run(() => BundleBuilder.DescribeForBundle(item)) : null;
                 if (description != null) descriptions.Add(description);
                 row.SubItems.Add(errors.Count == 0 ? "可打包 · " + (description!.StartInteractively ? "普通安装" : "优先自动安装，失败时打开界面") +
                     (item.RequiresNetwork ? "；需要联网" : "") +
@@ -214,7 +214,7 @@ public sealed class BundleBuildForm : Form
             $"生成时输出磁盘建议预留：至少 {BundleOverview.FormatBytes(summary.BuildFreeBytes)}（含中间文件）",
             $"目标电脑临时空间预留：至少 {BundleOverview.FormatBytes(summary.TargetTempBytes)}（按全部软件解包，不含安装后的占用）",
             "", "需要联网：" + Names(summary.NetworkSoftware), "将打开安装界面：" + Names(summary.InteractiveSoftware),
-            "目录需在安装界面选择：" + Names(summary.DirectorySelectionSoftware), "",
+            "安装目录：跟随各安装包自身默认位置；普通安装时可在安装界面修改。", "",
             "优先自动安装的软件仍可能需要确认窗口；以上提示不保证全程无人操作。",
             "适用于 Windows x64，内置运行时；单文件上限约 3.4 GiB。",
             summary.OutputReferenceBytes > BundleBuilder.MaxBundleBytes ? "未压缩参考已超单文件上限；压缩后仍可能可用，实际生成时再次检查容量。" : "实际生成时将再次检查文件、磁盘空间与最终容量。"

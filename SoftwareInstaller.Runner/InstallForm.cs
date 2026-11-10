@@ -130,8 +130,7 @@ public sealed class InstallForm : Form
                 var row = new ListViewItem(item.Name) { Tag = item.Id, ToolTipText = item.Name, ImageIndex = softwareIcons.Images.Count - 1 };
                 row.SubItems.Add(item.Version); row.SubItems.Add("待安装");
                 row.SubItems.Add(string.Join("；", new[] { item.StartInteractively ? "将打开安装界面" : "", item.RequiresNetwork ? "需要联网" : "" }.Where(s => s.Length > 0))); row.SubItems.Add(item.Category);
-                row.SubItems.Add(string.IsNullOrWhiteSpace(item.DefaultInstallDirectory) ? "跟随安装器默认" : item.DefaultInstallDirectory +
-                    (item.DirectoryMode == InstallDirectoryMode.Automatic ? "（安装时选择）" : ""));
+                row.SubItems.Add("跟随安装器默认");
                 rows.Add(item.Id, row);
                 if (++loadedRows % 24 == 0)
                 {
@@ -151,7 +150,7 @@ public sealed class InstallForm : Form
             }
             finally { initializing = false; }
             RenderList();
-            status.Text = "请选择方案并点击一键安装。需要操作时会打开软件安装界面，请按提示完成。";
+            status.Text = "请选择方案并点击一键安装。安装位置跟随安装器默认；需要操作的程序在完成并关闭后自动继续。";
             install.Enabled = true;
             if (startupPlan != null)
             {
@@ -275,7 +274,7 @@ public sealed class InstallForm : Form
                 row.SubItems[3].Text = p.Message;
             });
             results = await Task.Run(() => InstallationEngine.RunAsync(plan, work, logDirectory, reporter, cancellation.Token, control: installationControl,
-                prepareInstaller: (item, token) => package.ExtractAsync([item], work, extraction, token), cancelCurrent: true));
+                prepareInstaller: (item, token) => package.ExtractAsync([item], work, extraction, token), cancelCurrent: true, useInstallerDefaults: true));
             uncertain = results.Any(r => r.State == InstallState.Uncertain || r.ExitCode == 1641);
             var finished = results.Select(r => r.Id).ToHashSet();
             foreach (ListViewItem row in rows.Values)

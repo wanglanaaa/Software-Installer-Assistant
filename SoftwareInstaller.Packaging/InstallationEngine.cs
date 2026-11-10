@@ -43,12 +43,22 @@ public static class InstallationEngine
     public static List<BundleSoftware> IncludeDependencies(IEnumerable<BundleSoftware> all, IEnumerable<string> selectedIds)
         => InstallationPlan.Create(all).Select(selectedIds).Items.ToList();
 
-    public static bool HasDetection(BundleSoftware item) => !string.IsNullOrWhiteSpace(item.DetectionFile) || !string.IsNullOrWhiteSpace(item.MsiProductCode);
-    public static bool IsInstalled(BundleSoftware item)
+    internal static bool HasFileDetection(BundleSoftware item, bool useInstallerDefaults)
     {
-        if (!HasDetection(item)) return false;
+        if (string.IsNullOrWhiteSpace(item.DetectionFile)) return false;
+        if (!useInstallerDefaults) return true;
+        if (item.DetectionFile!.Contains(InstallDirectoryOptions.Placeholder)) return false;
+        string directory = InstallDirectoryOptions.Normalize(item.DefaultInstallDirectory);
+        return directory.Length == 0 || !Environment.ExpandEnvironmentVariables(item.DetectionFile).StartsWith(
+            directory.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool HasDetection(BundleSoftware item, bool useInstallerDefaults = false) => HasFileDetection(item, useInstallerDefaults) || !string.IsNullOrWhiteSpace(item.MsiProductCode);
+    public static bool IsInstalled(BundleSoftware item, bool useInstallerDefaults = false)
+    {
+        if (!HasDetection(item, useInstallerDefaults)) return false;
         if (!string.IsNullOrWhiteSpace(item.MsiProductCode) && MsiQueryProductState("{" + Guid.Parse(item.MsiProductCode).ToString().ToUpperInvariant() + "}") != 5) return false;
-        if (!string.IsNullOrWhiteSpace(item.DetectionFile))
+        if (HasFileDetection(item, useInstallerDefaults))
         {
             var path = InstallDirectoryOptions.ExpandDetectionPath(item.DetectionFile!, item.DefaultInstallDirectory);
             if (!File.Exists(path)) return false;
@@ -64,8 +74,8 @@ public static class InstallationEngine
     public static ProcessStartInfo CreateStartInfo(BundleSoftware item, string installer, string logDirectory, bool interactive,
         bool discardDirectory = false, bool requestElevation = false)
     {
-        string directory = discardDirectory ? "" : item.DefaultInstallDirectory ?? "";
-        var mode = discardDirectory ? InstallDirectoryMode.Automatic : item.DirectoryMode;
+        string directory = discardDirectory || interactive ? "" : item.DefaultInstallDirectory ?? "";
+        var mode = discardDirectory || interactive ? InstallDirectoryMode.InstallerDefault : item.DirectoryMode;
         string arguments = InstallDirectoryOptions.BuildArguments(interactive ? "" : item.Arguments, directory, mode, item.DirectoryParameter, item.IsMsi);
         var info = new ProcessStartInfo
         {
@@ -81,13 +91,13 @@ public static class InstallationEngine
     public static Task<List<InstallResult>> RunAsync(IEnumerable<BundleSoftware> software, string workDirectory, string logDirectory,
         IProgress<InstallUpdate>? progress = null, CancellationToken token = default,
         Func<BundleSoftware, string>? resolveInstaller = null, bool requestElevation = false, InstallationControl? control = null,
-        Func<BundleSoftware, CancellationToken, Task>? prepareInstaller = null, bool cancelCurrent = false)
-        => RunAsync(InstallationPlan.Create(software), workDirectory, logDirectory, progress, token, resolveInstaller, requestElevation, control, prepareInstaller, cancelCurrent);
+        Func<BundleSoftware, CancellationToken, Task>? prepareInstaller = null, bool cancelCurrent = false, bool useInstallerDefaults = false)
+        => RunAsync(InstallationPlan.Create(software), workDirectory, logDirectory, progress, token, resolveInstaller, requestElevation, control, prepareInstaller, cancelCurrent, useInstallerDefaults);
 
     public static async Task<List<InstallResult>> RunAsync(InstallationPlan plan, string workDirectory, string logDirectory,
         IProgress<InstallUpdate>? progress = null, CancellationToken token = default,
         Func<BundleSoftware, string>? resolveInstaller = null, bool requestElevation = false, InstallationControl? control = null,
-        Func<BundleSoftware, CancellationToken, Task>? prepareInstaller = null, bool cancelCurrent = false)
+        Func<BundleSoftware, CancellationToken, Task>? prepareInstaller = null, bool cancelCurrent = false, bool useInstallerDefaults = false)
     {
         var items = plan.Items; Directory.CreateDirectory(logDirectory); var results = new List<InstallResult>();
         var resultsById = new Dictionary<string, InstallResult>(StringComparer.Ordinal);
@@ -116,7 +126,7 @@ public static class InstallationEngine
             bool started = false;
             try
             {
-                if (IsInstalled(item)) return new(item.Id, item.Name, InstallState.Skipped, "已满足安装检测规则，跳过。");
+                if (IsInstalled(item, useInstallerDefaults)) return new(item.Id, item.Name, InstallState.Skipped, "已满足安装检测规则，跳过。");
                 if (prepareInstaller != null)
                 {
                     using var preparing = CancellationTokenSource.CreateLinkedTokenSource(token, control?.Token ?? CancellationToken.None);
@@ -127,9 +137,9 @@ public static class InstallationEngine
                 }
                 var installer = resolveInstaller?.Invoke(item) ?? PackagePaths.Resolve(PackagePaths.Resolve(workDirectory, item.Id), item.Installer);
                 if (!File.Exists(installer)) throw new FileNotFoundException("安装文件不存在。", installer);
-                bool directoryNeedsUi = !string.IsNullOrWhiteSpace(item.DefaultInstallDirectory) && item.DirectoryMode == InstallDirectoryMode.Automatic;
-                if (!directoryNeedsUi) InstallDirectoryOptions.CheckTargetDrive(item.DefaultInstallDirectory);
+                bool directoryNeedsUi = !useInstallerDefaults && !string.IsNullOrWhiteSpace(item.DefaultInstallDirectory) && item.DirectoryMode == InstallDirectoryMode.Automatic;
                 bool interactive = item.StartInteractively || (!item.IsMsi && string.IsNullOrWhiteSpace(item.Arguments)) || directoryNeedsUi;
+                if (!useInstallerDefaults && !directoryNeedsUi && !interactive) InstallDirectoryOptions.CheckTargetDrive(item.DefaultInstallDirectory);
                 bool fallback = false;
                 while (true)
                 {
@@ -137,21 +147,32 @@ public static class InstallationEngine
                         return new(item.Id, item.Name, InstallState.Cancelled, "已取消，未启动安装器。");
                     var message = interactive ? $"请在 {item.Name} 的安装界面中完成操作" : $"正在自动安装：{item.Name}";
                     if (fallback) message = $"{item.Name} 的静默参数未成功，已切换普通安装，请按窗口提示操作";
-                    if (directoryNeedsUi || fallback && !string.IsNullOrWhiteSpace(item.DefaultInstallDirectory)) message += $"；请确认安装位置 {item.DefaultInstallDirectory}";
+                    if (interactive) message += "；使用安装器默认位置，完成操作并关闭程序后自动继续";
                     progress?.Report(new(item.Id, message, completed, total, Phase: interactive ? InstallPhase.WaitingForUser : InstallPhase.Installing));
                     await LogAsync(message);
-                    var info = CreateStartInfo(item, installer, logDirectory, interactive, fallback, requestElevation);
+                    var info = CreateStartInfo(item, installer, logDirectory, interactive, fallback || useInstallerDefaults, requestElevation);
                     if (token.IsCancellationRequested || control?.Token.IsCancellationRequested == true)
                         return new(item.Id, item.Name, InstallState.Cancelled, "已取消，未启动安装器。");
-                    using var session = InstallerProcess.Start(info, trackChildren: !requestElevation && (!item.IsMsi || cancelCurrent), killOnClose: cancelCurrent);
+                    bool allowBreakaway = interactive && !item.IsMsi && !requestElevation;
+                    using var session = InstallerProcess.Start(info, trackChildren: !requestElevation && (!item.IsMsi || cancelCurrent), killOnClose: cancelCurrent, allowBreakaway: allowBreakaway);
                     var process = session.Process;
                     started = true;
                     await LogAsync($"{item.Name} PID={process.Id}；安装器={installer}；子进程管理={session.CanTerminate}；资源目录={workDirectory}");
+                    if (allowBreakaway) await LogAsync("交互启动兼容：允许外壳创建独立子进程；运行期间按父子关系补充跟踪，取消时结束已跟踪的子进程。");
+                    await LogAsync(useInstallerDefaults || interactive || fallback ? "安装位置：使用安装器自身默认值，未传入自定义目录参数。" : $"安装位置：{item.DefaultInstallDirectory}");
                     if (session.TrackingWarning != null) await LogAsync(session.TrackingWarning);
+                    if (session.TrackingNotice != null) await LogAsync(session.TrackingNotice);
                     progress?.Report(new(item.Id, message, completed, total, Phase: interactive ? InstallPhase.WaitingForUser : InstallPhase.Installing, CanTerminate: session.CanTerminate));
                     using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(item.TimeoutMinutes));
                     using var waiting = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, control?.Token ?? CancellationToken.None, cancelCurrent ? token : CancellationToken.None);
-                    try { await session.WaitAsync(waiting.Token); }
+                    try
+                    {
+                        await session.WaitAsync(waiting.Token, async detail =>
+                        {
+                            await LogAsync(detail);
+                            progress?.Report(new(item.Id, detail, completed, total, Phase: interactive ? InstallPhase.WaitingForUser : InstallPhase.Installing, CanTerminate: session.CanTerminate));
+                        });
+                    }
                     catch (OperationCanceledException)
                     {
                         string stopped = "等待超时，安装器可能仍在运行。";
@@ -171,9 +192,12 @@ public static class InstallationEngine
                         return new(item.Id, item.Name, InstallState.Uncertain, stopped + " 队列已停止，资源暂时保留。");
                     }
                     if ((cancelCurrent && token.IsCancellationRequested) || control?.Token.IsCancellationRequested == true)
+                    {
+                        if (cancelCurrent) await session.TerminateAsync();
                         return cancelCurrent
                             ? new(item.Id, item.Name, InstallState.Cancelled, "已取消，受管理的安装进程已退出，后续任务已停止。")
                             : new(item.Id, item.Name, InstallState.Uncertain, "已停止等待，安装结果待人工检查，资源暂时保留。");
+                    }
                     if (session.TrackingWarning != null)
                         return new(item.Id, item.Name, InstallState.Uncertain, session.TrackingWarning + "；主进程已退出，子进程状态待确认，资源暂时保留。", process.ExitCode);
                     int code = process.ExitCode;
@@ -187,16 +211,17 @@ public static class InstallationEngine
                     }
                     if (!success) return new(item.Id, item.Name, InstallState.Failed, code is 1602 or 1223 ? "安装已取消。" : $"安装器返回失败代码 {code}。", code);
                     if (reboot) return new(item.Id, item.Name, InstallState.RebootRequired, "安装器报告完成，需要重启后复核。", code);
-                    if (HasDetection(item))
+                    bool verify = HasDetection(item, useInstallerDefaults || interactive || fallback);
+                    if (verify)
                     {
                         progress?.Report(new(item.Id, $"正在验证 {item.Name} 的安装结果", completed, total, Phase: InstallPhase.Verifying));
-                        bool installed = IsInstalled(item);
+                        bool installed = IsInstalled(item, useInstallerDefaults || interactive || fallback);
                         using var verifying = CancellationTokenSource.CreateLinkedTokenSource(token, control?.Token ?? CancellationToken.None);
-                        for (int retry = 0; retry < 10 && !installed; retry++) { await Task.Delay(1000, verifying.Token); installed = IsInstalled(item); }
+                        for (int retry = 0; retry < 10 && !installed; retry++) { await Task.Delay(1000, verifying.Token); installed = IsInstalled(item, useInstallerDefaults || interactive || fallback); }
                         if (!installed) return new(item.Id, item.Name, InstallState.Uncertain, "安装器已退出但检测未通过，队列已暂停，请检查软件是否安装完成。", code);
                     }
                     string done = fallback ? "已切换普通安装并完成。" : interactive ? "普通安装已完成。" : "自动安装已完成。";
-                    return new(item.Id, item.Name, InstallState.Succeeded, done + (HasDetection(item) ? "检测通过。" : "安装器报告成功。"), code);
+                    return new(item.Id, item.Name, InstallState.Succeeded, done + (verify ? "检测通过。" : "进程已退出且返回成功；未配置适用的安装检测规则。"), code);
                 }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested || control?.Token.IsCancellationRequested == true)

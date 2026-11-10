@@ -6,7 +6,7 @@ namespace SoftwareInstaller.Packaging;
 public static class RunnerTemplate
 {
     public static string CurrentVersion => typeof(RunnerTemplate).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+')[0];
-    public static string ExpectedRunnerVersion => CurrentVersion + "+win7-demand";
+    public static string ExpectedRunnerVersion => CurrentVersion + "+selfcontained-demand-flow";
 
     public static void Validate(string path)
     {

@@ -15,8 +15,11 @@
     <EmbeddedResource Include="../assets/app-icon.png" LogicalName="SoftwareInstaller.AppLogo.png" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' != 'net48'"><ProjectReference Include="../SoftwareInstaller.Packaging/SoftwareInstaller.Packaging.csproj" /></ItemGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net9.0-windows'">
+    <InformationalVersion>$(Version)+selfcontained-demand-flow</InformationalVersion>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
-    <InformationalVersion>$(Version)+win7-demand</InformationalVersion>
+    <InformationalVersion>$(Version)+win7-demand-flow</InformationalVersion>
     <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>false</GenerateBindingRedirectsOutputType>
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -28,7 +31,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" GeneratePathProperty="true" PrivateAssets="all" />
     <EmbeddedResource Include="$(PkgNewtonsoft_Json)/lib/net45/Newtonsoft.Json.dll" LogicalName="SoftwareInstaller.Newtonsoft.Json.dll" />
     <EmbeddedResource Include="$(PkgNewtonsoft_Json)/LICENSE.md" LogicalName="SoftwareInstaller.Newtonsoft.Json.LICENSE.txt" />
-    <Compile Include="../SoftwareInstaller.Packaging/BundleManifest.cs;../SoftwareInstaller.Packaging/BundleReader.cs;../SoftwareInstaller.Packaging/PackagePaths.cs;../SoftwareInstaller.Packaging/InstallationPlan.cs;../SoftwareInstaller.Packaging/InstallationEngine.cs;../SoftwareInstaller.Packaging/InstallationControl.cs;../SoftwareInstaller.Packaging/InstallerProcess.cs;../SoftwareInstaller.Packaging/RunnerRuntime.cs;../SoftwareInstaller.Packaging/RunnerTemplate.cs" LinkBase="Runtime" />
+    <Compile Include="../SoftwareInstaller.Packaging/BundleManifest.cs;../SoftwareInstaller.Packaging/BundleReader.cs;../SoftwareInstaller.Packaging/PackagePaths.cs;../SoftwareInstaller.Packaging/InstallationPlan.cs;../SoftwareInstaller.Packaging/InstallationEngine.cs;../SoftwareInstaller.Packaging/InstallationControl.cs;../SoftwareInstaller.Packaging/InstallerProcess.cs;../SoftwareInstaller.Packaging/InstallerProcessTree.cs;../SoftwareInstaller.Packaging/RunnerRuntime.cs;../SoftwareInstaller.Packaging/RunnerTemplate.cs" LinkBase="Runtime" />
     <Compile Include="../SoftwareInstaller.Models/InstallDirectoryOptions.cs;../SoftwareInstaller.Models/SchemeDefinition.cs;../SoftwareInstaller.Utils/SoftwareIcons.cs" LinkBase="Runtime" />
   </ItemGroup>
 </Project>

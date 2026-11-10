@@ -21,7 +21,7 @@ public sealed class BundleOverview
     public static BundleOverview Create(BundleBuildRequest request, IEnumerable<BundleSoftware>? descriptions = null)
     {
         var files = request.Software.SelectMany(BundleBuilder.GetSourceFiles).ToList();
-        var items = (descriptions ?? request.Software.Select(BundleBuilder.Describe)).ToList();
+        var items = (descriptions ?? request.Software.Select(BundleBuilder.DescribeForBundle)).ToList();
         return new()
         {
             SoftwareCount = request.Software.Count, SchemeCount = request.Schemes.Count,

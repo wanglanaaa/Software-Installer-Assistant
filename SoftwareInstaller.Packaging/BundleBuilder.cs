@@ -29,7 +29,7 @@ public static class BundleBuilder
             .Select(s => int.Parse(s, System.Globalization.CultureInfo.InvariantCulture)).Distinct().ToList();
     }
 
-    public static List<string> CheckItem(SoftwareItem item)
+    public static List<string> CheckItem(SoftwareItem item, bool useInstallerDefaults = false)
     {
         var errors = new List<string>();
         if (string.IsNullOrWhiteSpace(item.Name)) errors.Add("软件名称为空");
@@ -66,8 +66,17 @@ public static class BundleBuilder
         if (item.DependencyIds.Contains(item.Id)) errors.Add("软件不能依赖自身");
         try
         {
-            InstallDirectoryOptions.BuildArguments(item);
-            if (!string.IsNullOrWhiteSpace(item.DetectionFile)) InstallDirectoryOptions.ExpandDetectionPath(item.DetectionFile, item.DefaultInstallDirectory);
+            if (useInstallerDefaults)
+            {
+                var description = DescribeForBundle(item);
+                InstallDirectoryOptions.BuildArguments(description.Arguments, "", description.DirectoryMode, null, description.IsMsi);
+                if (!string.IsNullOrWhiteSpace(description.DetectionFile)) InstallDirectoryOptions.ExpandDetectionPath(description.DetectionFile, "");
+            }
+            else
+            {
+                InstallDirectoryOptions.BuildArguments(item);
+                if (!string.IsNullOrWhiteSpace(item.DetectionFile)) InstallDirectoryOptions.ExpandDetectionPath(item.DetectionFile, item.DefaultInstallDirectory);
+            }
         }
         catch (InvalidDataException ex) { errors.Add(ex.Message); }
         return errors;
@@ -81,7 +90,7 @@ public static class BundleBuilder
             throw new InvalidDataException("软件标识重复，请重新添加重复条目。");
         foreach (var item in request.Software)
         {
-            var errors = CheckItem(item);
+            var errors = CheckItem(item, useInstallerDefaults: true);
             if (errors.Count > 0) throw new InvalidDataException($"{item.Name}：{string.Join("；", errors)}");
         }
         RunnerTemplate.Validate(request.RunnerPath);
@@ -109,7 +118,7 @@ public static class BundleBuilder
             }
             var installer = string.IsNullOrWhiteSpace(item.ResourceDirectory) ? Path.GetFileName(source) :
                 Path.GetRelativePath(Path.GetFullPath(item.ResourceDirectory), source).Replace('\\', '/');
-            var description = Describe(item);
+            var description = DescribeForBundle(item);
             description.IconPng = SoftwareIcons.ReadPng(source);
             description.Installer = installer;
             manifest.Software.Add(description);
@@ -213,6 +222,18 @@ public static class BundleBuilder
             files.Add((Path.GetFullPath(file), Path.GetRelativePath(root, file).Replace('\\', '/')));
         }
         foreach (var directory in Directory.EnumerateDirectories(folder)) CollectFiles(root, directory, files);
+    }
+
+    public static BundleSoftware DescribeForBundle(SoftwareItem item)
+    {
+        var description = Describe(item);
+        if (!InstallationEngine.HasFileDetection(description, useInstallerDefaults: true))
+        { description.DetectionFile = null; description.DetectionVersion = null; }
+        description.DefaultInstallDirectory = null;
+        description.DirectoryMode = InstallDirectoryMode.InstallerDefault;
+        description.DirectoryParameter = null;
+        description.StartInteractively = !description.IsMsi && string.IsNullOrWhiteSpace(description.Arguments);
+        return description;
     }
 
     public static BundleSoftware Describe(SoftwareItem item)

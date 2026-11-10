@@ -23,6 +23,21 @@ internal static partial class Program
     private static int Main(string[] args)
     {
         if (args.Length == 4 && args[0] == "--process-fixture") return RunProcessFixture(args);
+        if (args.Length == 3 && args[0] == "--breakaway-fixture") return RunBreakawayFixture(args[1], int.Parse(args[2]));
+        if (string.Equals(Path.GetFileName(Environment.ProcessPath), "InteractiveFixture.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            var breakawayScenario = Path.Combine(AppContext.BaseDirectory, "breakaway-scenario.txt");
+            if (File.Exists(breakawayScenario))
+            {
+                var scenario = File.ReadAllLines(breakawayScenario);
+                return RunBreakawayFixture(scenario[0], int.Parse(scenario[1]));
+            }
+            var marker = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "interactive-scenario.txt"));
+            File.WriteAllText(marker, "opened");
+            Thread.Sleep(400);
+            File.AppendAllText(marker, "\nclosed");
+            return 0;
+        }
         if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FallbackFixture.exe", StringComparison.OrdinalIgnoreCase))
         {
             var ledger = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "scenario.txt"));
@@ -69,6 +84,21 @@ internal static partial class Program
             {
                 TestProcessControlAsync().GetAwaiter().GetResult();
                 Console.WriteLine($"PASS: {passed} process control checks. Artifacts: {root}"); return 0;
+            }
+            if (args.Contains("--installer-flow-only"))
+            {
+                TestInstallerFlowAsync().GetAwaiter().GetResult();
+                Console.WriteLine($"PASS: {passed} installer flow checks. Artifacts: {root}"); return 0;
+            }
+            if (args.Contains("--breakaway-only"))
+            {
+                TestBreakawayCompatibilityAsync().GetAwaiter().GetResult();
+                Console.WriteLine($"PASS: {passed} breakaway compatibility checks. Artifacts: {root}"); return 0;
+            }
+            if (args.Contains("--process-tree-only"))
+            {
+                TestProcessTreeModeAsync().GetAwaiter().GetResult();
+                Console.WriteLine($"PASS: {passed} process tree checks. Artifacts: {root}"); return 0;
             }
             if (args.Contains("--bundle-reading-only"))
             {

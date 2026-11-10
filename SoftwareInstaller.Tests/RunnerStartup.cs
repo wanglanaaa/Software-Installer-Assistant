@@ -12,9 +12,9 @@ internal static partial class Program
     {
         RunnerTemplate.Validate(template);
         Assert(FileVersionInfo.GetVersionInfo(template).ProductVersion == RunnerTemplate.ExpectedRunnerVersion,
-            "the generator accepts the lightweight Framework runner profile");
+            "the generator accepts the current self-contained runner profile");
         await Reject(() => { RunnerTemplate.Validate(Environment.ProcessPath!); return Task.CompletedTask; },
-            "a legacy or unrelated runtime template cannot silently produce a slow bundle");
+            "a legacy or unrelated runtime template cannot silently replace the current runner");
         byte[] data = [77, 90, 1, 2, 3];
         var installer = Path.Combine(root, "setup.exe"); File.WriteAllBytes(installer, data);
         var item = new SoftwareInstaller.Models.SoftwareItem { Name = "打包开发样例", Version = "", Size = "", Description = "", Category = "测试", FilePath = installer };
@@ -24,7 +24,7 @@ internal static partial class Program
         using var package = await BundleReader.OpenAsync(output);
         var work = Path.Combine(root, "extracted"); await package.ExtractAsync(package.Manifest.Software, work);
         Assert(File.ReadAllBytes(Path.Combine(work, item.Id, "setup.exe")).SequenceEqual(data),
-            "the real builder and Framework template produce readable resources with matching hashes");
+            "the real builder and self-contained template produce readable resources with matching hashes");
         using var input = File.OpenRead(output); input.Position = input.Length - BundleReader.FooterSize;
         var footer = new byte[BundleReader.FooterSize]; input.ReadExactly(footer);
         long length = BitConverter.ToInt64(footer, 0); input.Position = input.Length - BundleReader.FooterSize - length;
@@ -32,6 +32,16 @@ internal static partial class Program
         using var zip = new ZipArchive(payload, ZipArchiveMode.Read);
         var resource = zip.GetEntry("content/" + package.Manifest.Software[0].Files[0].Sha256)!;
         Assert(resource.CompressedLength == resource.Length, "installer bytes are stored without secondary compression");
+        var report = Path.Combine(root, "self-contained-runner-report.json");
+        var info = new ProcessStartInfo(output) { UseShellExecute = false, CreateNoWindow = true };
+        info.ArgumentList.Add("--verify-package"); info.ArgumentList.Add(report);
+        using var process = Process.Start(info)!;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        await process.WaitForExitAsync(deadline.Token);
+        using var diagnostic = JsonDocument.Parse(File.ReadAllText(report));
+        Assert(process.ExitCode == 0 && diagnostic.RootElement.GetProperty("success").GetBoolean() &&
+            diagnostic.RootElement.GetProperty("runnerVersion").GetString() == RunnerTemplate.CurrentVersion,
+            "the actual exported self-contained EXE starts, reads its own manifest and verifies resources without running an installer");
     }
 
     // Explicit development-only comparison; uses synthetic resources and never launches an installer.
